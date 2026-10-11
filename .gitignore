@@ -1,4 +1,9 @@
 .venv/
+.tools/
+.cache/
+.flwr/
+results/runs/
+data/smoke/
 __pycache__/
 .pytest_cache/
 *.pyc
