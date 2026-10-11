@@ -2,7 +2,7 @@
 
 CSC3104 Cloud & Distributed Computing - Team 18
 
-A research prototype for collaborative fraud classification using **PaySim synthetic transactions**. Three simulated banks train the same PyTorch MLP through Flower. The current milestone is a measurable, synchronous baseline; Docker, Kubernetes, and resilient quorum/timeout/version management are future work.
+A research prototype for collaborative fraud classification using **PaySim synthetic transactions**. Three simulated banks train the same PyTorch MLP through Flower. The synchronous baseline can run locally or as separate services with Docker and local Kubernetes. Resilient quorum/timeout/version management remains future work.
 
 ## Current implementation
 
@@ -12,12 +12,33 @@ A research prototype for collaborative fraud classification using **PaySim synth
 - Three-client Flower execution, round timings, run manifests, per-round checkpoints, and final global checkpoint.
 - An all-client baseline that rejects missing/error/duplicate replies instead of silently aggregating a partial round.
 - Separate explicit final-test evaluation; training commands never load `test.csv`.
+- Docker Compose and local Kubernetes deployments with separate bank data mounts and persistent coordinator results.
+
+**Want to run separate containers?** Follow the [Docker guide](docker/README.md), then the [Kubernetes guide](k8s/README.md). The commands below remain the local simulation workflow.
 
 See [baseline verification and initial PaySim results](docs/BASELINE_VERIFICATION.md) for the recorded checks and run artifacts.
+See [Docker and Kubernetes verification](docs/DEPLOYMENT_VERIFICATION.md) for the separate-container smoke tests.
 
 This is transaction-level classification, not identity linking or cross-bank money-laundering graph detection. Sending model updates instead of rows is not a mathematical privacy guarantee. Local simulations do not establish independent bank data isolation.
 
 ## Start here: which command should I run?
+
+### Where to find information
+
+| What you need | Read this |
+| --- | --- |
+| Install Python dependencies, prepare data, run local training | This README, starting with [Environment](#environment) |
+| Understand how the banks and coordinator work together | [Current architecture](docs/ARCHITECTURE.md) |
+| Build containers and understand every Docker file/command | [Docker guide](docker/README.md) |
+| Deploy pods, upload datasets, and understand Kubernetes commands | [Kubernetes guide](k8s/README.md) |
+| Understand scores, checkpoints, and final-test evaluation | [Outputs and final evaluation](#outputs-and-final-evaluation) |
+| Understand terminal warnings | [Understanding warnings](#understanding-warnings) |
+| See measured baseline results | [Baseline verification](docs/BASELINE_VERIFICATION.md) |
+| See which deployment checks passed | [Deployment verification](docs/DEPLOYMENT_VERIFICATION.md) |
+| Plan experiments and write the report | [Experiment plan](experiments/PLAN.md) and [report outline](docs/REPORT_NOTES.md) |
+| Understand reliability work still to implement | [Reliability roadmap](src/crossbank/reliability/README.md) |
+
+Choose one execution route at a time: **local simulation** for model development, **Docker Compose** for testing separate containers, or **Kubernetes** for testing orchestration and pod behaviour. Kubernetes uses the Docker image, but does not require the Compose services to be running. Starting deployment services does not start training; submitting a run is a separate step.
 
 Open the project folder in VS Code, then open **Terminal > New Terminal**. Run these commands from the repository root, the folder containing this README and `pyproject.toml`.
 
@@ -106,6 +127,8 @@ python -m pytest -q
 
 If `.venv` already exists, skip `uv venv` and use the activation and sync commands. You do not need to reinstall packages every time you train.
 
+`uv venv --python 3.12 .venv` creates the project environment. `Activate.ps1` makes this terminal use it. `uv sync --locked` installs versions from `uv.lock`; `--extra dev` adds test tools and `--extra data` adds download tools. `python -m pytest -q` runs tests with a shorter output format. These commands require `uv` to be installed and available in your terminal.
+
 Optional archived XGBoost/plotting dependencies: add `--extra research` to the sync command. A pip-compatible alternative is `pip install -e ".[dev,data]"`; `pip install -r requirements.txt` installs all extras. These pip commands use version ranges rather than the lockfile.
 
 Run commands below from the repository root. Activation is optional if you use `.venv/Scripts/python.exe` explicitly.
@@ -130,6 +153,8 @@ flwr run . --federation-config "num-supernodes=3 client-resources-num-cpus=1" --
 ```
 
 For that CLI route, override `data-dir` and `output-dir` with absolute paths using `--run-config`, since the managed runtime can execute in an extracted application directory.
+
+This is an optional managed **local simulation** command, not the Docker/Kubernetes launch command. `num-supernodes=3` requests three simulated banks, `client-resources-num-cpus=1` assigns one CPU per client, and `--stream` follows logs. The tested container guides use the networked deployment runtime instead.
 
 ## Prepare PaySim
 
@@ -191,15 +216,17 @@ python scripts/testing/evaluate_checkpoint.py <path-to-final_model.pt>
 
 This uses the saved validation threshold without tuning on test data and writes a sibling `.test_results.json`. Old `bank_*_pytorch.pt` checkpoints used bank-specific scalers and are rejected by this new loader. Do not average them into a global model.
 
+Replace `<path-to-final_model.pt>` with a real saved file path, quoted if it contains spaces; do not type the angle brackets. The default test dataset is `data/processed/test.csv`. Use `--test-data <csv-path>` only when deliberately selecting another compatible test dataset. This command evaluates an existing model; it does not train one.
+
 Run artifacts are ignored by Git; archive the selected experiment directories separately for your report. Small smoke-run scores establish execution only.
 
 ## Tests and remaining project work
 
 `python -m pytest -q` covers partitioning, preprocessing, training reproducibility, invalid settings, single-class training, checkpoint round trips, message-config overrides, and two actual Flower strategy rounds through an in-memory test Grid. A separate `run_flower.py` smoke run validates Ray worker execution.
 
-Next: containerise separate bank/coordinator services, deploy Kubernetes workloads with isolated mounts and durable coordinator state, then implement and compare fixed/adaptive quorum, timeout, stale-version and recovery policies. Add controlled failure experiments and repeated-seed systems/ML measurements.
+Next: test bank failures in the container deployment, then implement and compare fixed/adaptive quorum, timeout, stale-version and recovery policies. Add controlled failure experiments and repeated-seed systems/ML measurements. TLS and bank authentication are required before moving beyond trusted local development.
 
-See [architecture](docs/ARCHITECTURE.md), [experiment plan](experiments/PLAN.md), and [report outline](docs/REPORT_NOTES.md). The [initial repository audit](docs/PROJECT_REPO_ANALYSIS.md) describes the state **before this baseline repair**. `configs/default.yaml` is a historical research plan, not active runtime configuration.
+See [architecture](docs/ARCHITECTURE.md), [experiment plan](experiments/PLAN.md), and [report outline](docs/REPORT_NOTES.md). `configs/default.yaml` is a historical research plan, not active runtime configuration. Local training settings come from CLI options and `pyproject.toml`; container run overrides are in `docker/run-config.toml`.
 
 ## Understanding warnings
 
