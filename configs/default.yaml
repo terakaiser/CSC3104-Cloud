@@ -1,10 +1,12 @@
-# Documented research defaults (scripts currently use argparse flags).
+# Historical research plan only: no executable code reads this file.
+# Runtime defaults live in pyproject.toml and CLI --help.
 seed: 42
 banks: 3
-batch_size: 256
-epochs: 5
+batch_size: 1024
+epochs: 2
 learning_rate: 0.001
-federated_rounds: 10
+federated_rounds: 2
 local_epochs: 1
+# Future resilient-coordinator settings, NOT implemented by the baseline:
 quorum: 2
 round_timeout_seconds: 30
