@@ -1,10 +1,8 @@
 """Shared validation, checkpoint format, and experiment output management."""
-from datetime import datetime, timezone
 from importlib.metadata import version
 import json
 from pathlib import Path
 import platform
-from uuid import uuid4
 
 import torch
 
@@ -12,6 +10,7 @@ from crossbank.data.fl_preprocessing import FEATURES, PREPROCESSING_VERSION
 from crossbank.models.metrics import evaluate, select_threshold
 from crossbank.models.mlp import FraudMLP
 from crossbank.models.training import scores
+from crossbank.reporting import create_run_directory
 
 
 def write_json(path, value):
@@ -22,11 +21,12 @@ def write_json(path, value):
 
 
 def create_run(output_dir, name, config):
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    directory = Path(output_dir) / f"{name}-{stamp}-{uuid4().hex[:8]}"
-    directory.mkdir(parents=True, exist_ok=False)
+    reserved = config.get("run-directory")
+    directory = Path(reserved) if reserved else create_run_directory(output_dir, name)
+    if reserved and (not directory.is_dir() or (directory / "run_settings.json").exists()):
+        raise ValueError("Reserved run directory must exist and must not contain a previous run")
     data_dir = Path(config.get("data-dir", config.get("data_dir", "data/processed")))
-    write_json(directory / "manifest.json", {
+    write_json(directory / "run_settings.json", {
         "experiment": name, "config": config, "preprocessing": PREPROCESSING_VERSION,
         "features": FEATURES, "python": platform.python_version(), "platform": platform.platform(),
         "packages": {name: version(name) for name in ("torch", "numpy", "pandas", "scikit-learn", "flwr")},

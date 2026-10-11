@@ -8,6 +8,7 @@ from crossbank.data.fl_preprocessing import load_fl_data
 from crossbank.experiments import load_checkpoint, write_json
 from crossbank.models.metrics import evaluate
 from crossbank.models.training import scores, seed_everything
+from crossbank.reporting import readable_metrics, format_summary
 
 
 def main():
@@ -21,8 +22,8 @@ def main():
     metrics = {"split": "test", "checkpoint": str(args.checkpoint.resolve()),
                "test_data": str(args.test_data.resolve()), "threshold": checkpoint["threshold"],
                **evaluate(y, scores(model, X), checkpoint["threshold"])}
-    write_json(args.checkpoint.with_suffix(".test.json"), metrics)
-    print(metrics)
+    write_json(args.checkpoint.with_suffix(".test_results.json"), readable_metrics(metrics))
+    print(format_summary(metrics, title="Final test results (saved validation threshold)"))
 
 
 if __name__ == "__main__":

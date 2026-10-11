@@ -11,6 +11,7 @@ from crossbank.experiments import create_run, save_checkpoint, validation_metric
 from crossbank.fl.fedavg import fedavg
 from crossbank.models.mlp import FraudMLP
 from crossbank.models.training import seed_everything, train_model
+from crossbank.reporting import readable_metrics, save_summary
 
 
 def main():
@@ -25,7 +26,7 @@ def main():
     X_val, y_val = load_fl_data(args.data_dir / "validation.csv")
     seed_everything(args.seed)
     model = FraudMLP()
-    directory = create_run(args.output_dir, "in-process-fedavg", config)
+    directory = create_run(args.output_dir, "sequential_federated_demo", config)
     history = []
     for round_number in range(1, args.rounds + 1):
         started = perf_counter()
@@ -40,11 +41,11 @@ def main():
         training_seconds = perf_counter() - started
         metrics = validation_metrics(model, X_val, y_val)
         history.append({"round": round_number, "training_seconds": training_seconds, **metrics})
-        write_json(directory / "metrics.json", history)
-        save_checkpoint(directory / f"round-{round_number:03d}.pt", model,
+        write_json(directory / "validation_results.json", [readable_metrics(row) for row in history])
+        save_checkpoint(directory / f"model_after_round_{round_number:03d}.pt", model,
                         threshold=metrics["threshold"], config=config, round_number=round_number)
-        print(f"Round {round_number}: {metrics}")
-    save_checkpoint(directory / "global_model.pt", model, threshold=metrics["threshold"],
+        save_summary(directory, metrics, title=f"Round {round_number} - validation results")
+    save_checkpoint(directory / "final_model.pt", model, threshold=metrics["threshold"],
                     config=config, round_number=args.rounds)
     print(f"Saved to {directory.resolve()}")
 

@@ -11,6 +11,7 @@ from crossbank.data.fl_preprocessing import load_fl_data
 from crossbank.experiments import create_run, save_checkpoint, validation_metrics, write_json
 from crossbank.models.mlp import FraudMLP
 from crossbank.models.training import seed_everything
+from crossbank.reporting import readable_metrics, save_summary
 
 app = ServerApp()
 
@@ -61,8 +62,9 @@ def main(grid: Grid, context: Context):
     seed_everything(int(config["seed"]))
     model = FraudMLP()
     X_val, y_val = load_fl_data(Path(str(config["data-dir"])) / "validation.csv")
-    directory = create_run(str(config["output-dir"]), "flower", config)
-    write_json(directory / "status.json", {"status": "running", "completed_rounds": 0})
+    directory = create_run(str(config["output-dir"]), "three_bank_federated", config)
+    write_json(directory / "training_status.json", {"status": "running", "completed_rounds": 0})
+    print("Evaluation runs on the server's validation data; bank-side evaluation is intentionally disabled.", flush=True)
     strategy = SynchronousFedAvg()
     history = []
     started = perf_counter()
@@ -73,11 +75,13 @@ def main(grid: Grid, context: Context):
         row = {"round": round_number, "elapsed_seconds": perf_counter() - started,
                **strategy.round_training.get(round_number, {}), **metrics}
         history.append(row)
-        write_json(directory / "metrics.json", history)
-        save_checkpoint(directory / f"round-{round_number:03d}.pt", model,
+        write_json(directory / "validation_results.json", [readable_metrics(row) for row in history])
+        model_filename = "untrained_model.pt" if round_number == 0 else f"model_after_round_{round_number:03d}.pt"
+        save_checkpoint(directory / model_filename, model,
                         threshold=metrics["threshold"], config=config, round_number=round_number)
-        write_json(directory / "status.json", {"status": "running", "completed_rounds": round_number})
-        return MetricRecord({key: value for key, value in metrics.items() if value is not None})
+        write_json(directory / "training_status.json", {"status": "running", "completed_rounds": round_number})
+        save_summary(directory, metrics, title="Before training - validation results" if round_number == 0 else f"Round {round_number} - validation results")
+        return MetricRecord({key: value for key, value in readable_metrics(metrics).items() if value is not None})
 
     try:
         result = strategy.start(
@@ -86,14 +90,14 @@ def main(grid: Grid, context: Context):
             evaluate_fn=evaluate_global,
         )
         model.load_state_dict(result.arrays.to_torch_state_dict())
-        save_checkpoint(directory / "global_model.pt", model,
+        save_checkpoint(directory / "final_model.pt", model,
                         threshold=history[-1]["threshold"], config=config, round_number=rounds)
-        write_json(directory / "status.json", {
+        write_json(directory / "training_status.json", {
             "status": "completed", "completed_rounds": rounds,
             "total_seconds": perf_counter() - started,
         })
     except Exception as exc:
-        write_json(directory / "status.json", {
+        write_json(directory / "training_status.json", {
             "status": "failed", "completed_rounds": max(0, len(history) - 1), "error": str(exc),
         })
         raise

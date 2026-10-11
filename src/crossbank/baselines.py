@@ -9,6 +9,7 @@ from crossbank.data.fl_preprocessing import BANKS, load_bank_data, load_fl_data
 from crossbank.experiments import create_run, save_checkpoint, validation_metrics, write_json
 from crossbank.models.mlp import FraudMLP
 from crossbank.models.training import seed_everything, train_model
+from crossbank.reporting import readable_metrics, save_summary
 
 
 def training_parser(description):
@@ -41,10 +42,11 @@ def baseline_main(*, bank_only):
                          learning_rate=args.learning_rate, seed=args.seed)
     training_seconds = perf_counter() - started
     metrics = validation_metrics(model, X_val, y_val)
-    directory = create_run(args.output_dir, f"bank-{args.bank}" if bank_only else "centralised", config)
-    write_json(directory / "metrics.json", {
+    directory = create_run(args.output_dir, f"bank_{args.bank}_only" if bank_only else "all_banks_pooled", config)
+    write_json(directory / "validation_results.json", readable_metrics({
         "split": "validation", "training_rows": len(y), "fraud_rows": int(y.sum()),
         "epoch_losses": losses, "training_seconds": training_seconds, **metrics,
-    })
-    save_checkpoint(directory / "model.pt", model, threshold=metrics["threshold"], config=config, round_number=0)
-    print(f"Validation: {metrics}\nSaved to {directory.resolve()}")
+    }))
+    save_checkpoint(directory / "final_model.pt", model, threshold=metrics["threshold"], config=config, round_number=0)
+    save_summary(directory, metrics, title=f"Bank {args.bank.upper()} validation results" if bank_only else "Pooled banks validation results")
+    print(f"Results folder: {directory.resolve()}")
