@@ -1,0 +1,217 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coordinator
+  namespace: crossbank
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: {app: coordinator}
+  template:
+    metadata:
+      labels: {app: coordinator}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        fsGroup: 10001
+      containers:
+        - name: coordinator
+          image: crossbank-fl:local
+          imagePullPolicy: IfNotPresent
+          command: ["flower-superlink","--insecure","--isolation","subprocess","--serverappio-api-address","127.0.0.1:9091","--fleet-api-address","0.0.0.0:9092","--control-api-address","0.0.0.0:9093","--health-server-address","0.0.0.0:9098","--database","/state/flower.db","--storage-dir","/state/objects"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests: {cpu: "250m", memory: "512Mi"}
+            limits: {cpu: "1", memory: "2Gi"}
+          startupProbe:
+            grpc: {port: 9098}
+            periodSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            grpc: {port: 9098}
+            periodSeconds: 10
+          livenessProbe:
+            grpc: {port: 9098}
+            periodSeconds: 20
+            failureThreshold: 3
+          volumeMounts:
+            - {name: data, mountPath: /data, readOnly: true}
+            - {name: results, mountPath: /results}
+            - {name: state, mountPath: /state}
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: coordinator-data}
+        - name: results
+          persistentVolumeClaim: {claimName: results}
+        - name: state
+          persistentVolumeClaim: {claimName: coordinator-state}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bank-a
+  namespace: crossbank
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: {app: bank-a}
+  template:
+    metadata:
+      labels: {app: bank-a}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        fsGroup: 10001
+      containers:
+        - name: bank-a
+          image: crossbank-fl:local
+          imagePullPolicy: IfNotPresent
+          command: ["flower-supernode","--insecure","--isolation","subprocess","--superlink","coordinator:9092","--node-config","partition-id=0","--clientappio-api-address","127.0.0.1:9094","--health-server-address","0.0.0.0:9098"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests: {cpu: "250m", memory: "512Mi"}
+            limits: {cpu: "1", memory: "2Gi"}
+          startupProbe:
+            grpc: {port: 9098}
+            periodSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            grpc: {port: 9098}
+            periodSeconds: 10
+          livenessProbe:
+            grpc: {port: 9098}
+            periodSeconds: 20
+            failureThreshold: 3
+          volumeMounts:
+            - {name: data, mountPath: /data, readOnly: true}
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: bank-a-data}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bank-b
+  namespace: crossbank
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: {app: bank-b}
+  template:
+    metadata:
+      labels: {app: bank-b}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        fsGroup: 10001
+      containers:
+        - name: bank-b
+          image: crossbank-fl:local
+          imagePullPolicy: IfNotPresent
+          command: ["flower-supernode","--insecure","--isolation","subprocess","--superlink","coordinator:9092","--node-config","partition-id=1","--clientappio-api-address","127.0.0.1:9094","--health-server-address","0.0.0.0:9098"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests: {cpu: "250m", memory: "512Mi"}
+            limits: {cpu: "1", memory: "2Gi"}
+          startupProbe:
+            grpc: {port: 9098}
+            periodSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            grpc: {port: 9098}
+            periodSeconds: 10
+          livenessProbe:
+            grpc: {port: 9098}
+            periodSeconds: 20
+            failureThreshold: 3
+          volumeMounts:
+            - {name: data, mountPath: /data, readOnly: true}
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: bank-b-data}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bank-c
+  namespace: crossbank
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: {app: bank-c}
+  template:
+    metadata:
+      labels: {app: bank-c}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        fsGroup: 10001
+      containers:
+        - name: bank-c
+          image: crossbank-fl:local
+          imagePullPolicy: IfNotPresent
+          command: ["flower-supernode","--insecure","--isolation","subprocess","--superlink","coordinator:9092","--node-config","partition-id=2","--clientappio-api-address","127.0.0.1:9094","--health-server-address","0.0.0.0:9098"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests: {cpu: "250m", memory: "512Mi"}
+            limits: {cpu: "1", memory: "2Gi"}
+          startupProbe:
+            grpc: {port: 9098}
+            periodSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            grpc: {port: 9098}
+            periodSeconds: 10
+          livenessProbe:
+            grpc: {port: 9098}
+            periodSeconds: 20
+            failureThreshold: 3
+          volumeMounts:
+            - {name: data, mountPath: /data, readOnly: true}
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: bank-c-data}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: coordinator
+  namespace: crossbank
+spec:
+  selector: {app: coordinator}
+  ports:
+    - {name: fleet, port: 9092, targetPort: 9092}
+    - {name: control, port: 9093, targetPort: 9093}
