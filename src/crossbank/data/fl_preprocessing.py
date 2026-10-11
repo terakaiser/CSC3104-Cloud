@@ -23,6 +23,9 @@ TRANSACTION_TYPES = [
     "TRANSFER",
 ]
 
+PREPROCESSING_VERSION = "paysim-fixed-nine-v1"
+BANKS = ("a", "b", "c")
+
 
 def load_fl_data(path):
     """
@@ -46,6 +49,16 @@ def load_fl_data(path):
             "isFraud",
         ],
     )
+
+    if df.empty:
+        raise ValueError(f"Empty dataset: {path}")
+    if not df["type"].isin(TRANSACTION_TYPES).all():
+        raise ValueError(f"Unknown or missing transaction type in {path}")
+    if not df["isFraud"].isin([0, 1]).all():
+        raise ValueError(f"Fraud labels must be binary in {path}")
+    numeric = df[["step", "amount", "oldbalanceOrg", "oldbalanceDest"]].to_numpy(dtype=float)
+    if not np.isfinite(numeric).all():
+        raise ValueError(f"Non-finite numeric features in {path}")
 
     # 2. Create a feature table
     x = pd.DataFrame(index=df.index)
@@ -77,4 +90,20 @@ def load_fl_data(path):
     # 7. Extract correct fraud labels (y)
     y = df["isFraud"].to_numpy(dtype=np.float32)
 
+    return X, y
+
+
+def load_bank_data(data_dir, bank, *, max_samples=100000, seed=42):
+    """Use identical reproducible bank subsets for local, pooled and FL runs.
+
+    A cap of zero means all rows. Sampling is deliberately not label-stratified;
+    small smoke samples are not suitable for estimating fraud performance.
+    """
+    from pathlib import Path
+    if bank not in BANKS or max_samples < 0:
+        raise ValueError("Expected bank a/b/c and a nonnegative sample cap")
+    X, y = load_fl_data(Path(data_dir) / f"bank_{bank}.csv")
+    if max_samples and len(y) > max_samples:
+        indices = np.random.default_rng(seed).choice(len(y), max_samples, replace=False)
+        X, y = X[indices], y[indices]
     return X, y

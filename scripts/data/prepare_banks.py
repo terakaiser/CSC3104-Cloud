@@ -4,7 +4,7 @@ import sys
 import pandas as pd
 
 sys.path.insert(
-    0, str(Path(__file__).resolve().parents[1] / "src")
+    0, str(Path(__file__).resolve().parents[2] / "src")
 )
 
 from crossbank.data.pipeline import partition_non_iid
