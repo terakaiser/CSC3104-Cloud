@@ -23,6 +23,24 @@ This is transaction-level classification, not identity linking or cross-bank mon
 
 ## Start here: which command should I run?
 
+### Short commands for Docker and Kubernetes
+
+Use [project.ps1](project.ps1) from PowerShell in the repository root. It runs the detailed commands in the deployment guides and stops when a command fails.
+
+```powershell
+.\project.ps1 help
+.\project.ps1 docker start
+.\project.ps1 docker train
+.\project.ps1 docker results
+.\project.ps1 docker stop
+```
+
+Use `k8s` instead of `docker` for Kubernetes. `start` starts services and waits for readiness; `train` submits an experiment; `results` copies saved files locally and prints the newest saved status/summary; `stop` stops services while preserving storage. Stop only after training finishes unless you intend to interrupt it. `results` needs the coordinator running and may show an earlier experiment, so check the run name and status.
+
+For a new setup, run `docker setup` and `docker build` first. `setup` prepares artificial smoke datasets, not PaySim performance data. For Kubernetes, also run `k8s setup` once to create storage and upload the prepared datasets. Skip setup when data is already present. `build` creates the shared image; repeat it after code/settings changes, then follow the deployment guide to replace existing services. You can also use `docker status`, `k8s status`, `docker logs`, and `k8s logs` to inspect services without training.
+
+Every action uses the same prefix: for example, `docker setup` means `.\project.ps1 docker setup`. Kubernetes shortcuts always target the `docker-desktop` context. They do not create a cluster. Enable/configure Docker Desktop Kubernetes first if that context is missing. Only submit one run at a time; the Kubernetes shortcut replaces a completed submission Job but refuses to remove an active or failed one.
+
 ### Where to find information
 
 | What you need | Read this |

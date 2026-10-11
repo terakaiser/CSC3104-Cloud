@@ -8,6 +8,21 @@ New checkout? First complete the root README's [Python environment setup](../REA
 
 ## Files and settings
 
+For everyday use, [project.ps1](../project.ps1) wraps the commands below:
+
+| Shortcut (run from repository root) | When / what it does |
+| --- | --- |
+| `.\project.ps1 docker setup` | Once: prepare artificial smoke data and separate deployment folders; refuses to overwrite existing deployment data. |
+| `.\project.ps1 docker build` | First time or after code/settings changes: build the shared image. |
+| `.\project.ps1 docker start` | Start services and wait for health checks; does not train. |
+| `.\project.ps1 docker train` | Submit a new run and show logs. |
+| `.\project.ps1 docker results` | Copy results locally and print the newest saved status/summary; requires services running. |
+| `.\project.ps1 docker status` | List service state. |
+| `.\project.ps1 docker logs` | Show the last 100 log lines per service. |
+| `.\project.ps1 docker stop` | Stop services while keeping volumes; interrupts active training. |
+
+Skip `setup` and `build` on repeat runs with existing data and an unchanged image. For PaySim, use the explicit preparation instructions below instead of the smoke-data shortcut. The full commands remain below for troubleshooting.
+
 | File | Purpose / when to edit it |
 | --- | --- |
 | [Dockerfile](Dockerfile) | Image recipe: installs packages and application code, then runs as a non-root user. Edit when changing packaging. |
