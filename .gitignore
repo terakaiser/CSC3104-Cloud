@@ -4,6 +4,8 @@
 .flwr/
 results/runs/
 data/smoke/
+data/deployment/
+*.fab
 __pycache__/
 .pytest_cache/
 *.pyc
