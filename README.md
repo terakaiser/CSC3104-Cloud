@@ -1,427 +1,122 @@
 # Cross-Bank Federated Fraud Detection
 
-**CSC3104 — Cloud & Distributed Computing**  
-**Project:** Resilient Cloud-Native Federated Learning for Privacy-Preserving Cross-Bank Fraud Detection
+CSC3104 Cloud & Distributed Computing - Team 18
 
-> **Read this first:** This is a research/student prototype using **PaySim synthetic financial transactions**, NOT real bank data. It does not prove that the system is private or production-secure. Federated learning keeps transaction rows at the clients by design, but model updates can still leak information without additional protections.
+A research prototype for collaborative fraud classification using **PaySim synthetic transactions**. Three simulated banks train the same PyTorch MLP through Flower. The current milestone is a measurable, synchronous baseline; Docker, Kubernetes, and resilient quorum/timeout/version management are future work.
 
-## 0. What is this project, in plain English?
+## Current implementation
 
-Imagine **Bank A, Bank B, and Bank C** want one fraud-detection AI model. They cannot simply pool their customer transaction tables.
+- Chronological PaySim train/validation/test preparation and three disjoint amount-skewed bank partitions.
+- Shared nine-feature preprocessing and MLP training for bank-local, pooled, sequential FedAvg, and Flower experiments.
+- Validation-selected thresholds, precision/recall/F1, average precision (`pr_auc`), ROC-AUC, false-positive rate and confusion counts.
+- Three-client Flower execution, round timings, run manifests, per-round checkpoints, and final global checkpoint.
+- An all-client baseline that rejects missing/error/duplicate replies instead of silently aggregating a partial round.
+- Separate explicit final-test evaluation; training commands never load `test.csv`.
 
-1. A coordinator creates a **global PyTorch model**.
-2. Each bank receives **a copy of the same model weights**.
-3. Each bank trains that copy using **its own transactions**.
-4. Banks return **updated model weights**, not the raw transaction tables.
-5. Flower combines the weights using **FedAvg** and distributes the updated global model.
-6. Repeat for several rounds.
+See [baseline verification and initial PaySim results](docs/BASELINE_VERIFICATION.md) for the recorded checks and run artifacts.
 
-Our later original contribution will be **fault/straggler-tolerant coordination** (for example, quorum-based aggregation, client timeouts, and possibly staleness-aware updates), evaluated against ordinary FedAvg. **Those resilience mechanisms are planned, not already implemented.**
+This is transaction-level classification, not identity linking or cross-bank money-laundering graph detection. Sending model updates instead of rows is not a mathematical privacy guarantee. Local simulations do not establish independent bank data isolation.
 
-### What are the tools for?
+## Environment
 
-| Tool | Job |
-|---|---|
-| Python | Programming language |
-| PyTorch | Neural network, loss function, local training |
-| Adam | Updates neural-network weights during local training |
-| Flower | Coordinates federated-learning rounds and FedAvg |
-| Docker | Packages programs into container images (later stage) |
-| Kubernetes | Runs/manages networked containers, including failures (later stage) |
-
-**Important:** `train_bank.py` and `train_centralized.py` are **comparison experiments**. The actual collaborative system is the **Flower client + server**. Do **not** average the older `bank_a_pytorch.pt`, `bank_b_pytorch.pt`, and `bank_c_pytorch.pt` checkpoints: those independent models used bank-specific scalers, so their weights are not directly compatible.
-
----
-
-### Step 1.2 — Install Python 3.12
-
-Install Python 3.12 from <https://www.python.org/downloads/>. Python **3.12** is the version tested for the existing development environment; do not accidentally use a separate system Python 3.14 installation.
-
-Open **PowerShell** and verify:
-
-```powershell
-py -3.12 --version
-```
-
-Expected: `Python 3.12.x`. If the command fails, check the Python installation before continuing.
-
-### Step 1.3 — Install `uv` (Python environment/package manager)
-
-Follow the Windows instructions at <https://docs.astral.sh/uv/getting-started/installation/>. One common Windows PowerShell installation command is:
-
-```powershell
-winget install --id=astral-sh.uv -e
-```
-
-Close and reopen PowerShell, then check:
-
-```powershell
-uv --version
-```
-
-
-## 2. Create and activate the virtual environment
-
-A virtual environment keeps this project's Python packages separate from other projects.
-
-From the **project root**:
+Use Python 3.12. Dependencies and the compatible Flower version are defined in `pyproject.toml`; `uv.lock` records resolved versions.
 
 ```powershell
 uv venv --python 3.12 .venv
 .\.venv\Scripts\Activate.ps1
-python --version
+uv sync --locked --extra dev --extra data
+python -m pytest -q
 ```
 
-Expected: `Python 3.12.x`. Your prompt may show `(.venv)`.
+Optional archived XGBoost/plotting dependencies: add `--extra research` to the sync command. A pip-compatible alternative is `pip install -e ".[dev,data]"`; `pip install -r requirements.txt` installs all extras. These pip commands use version ranges rather than the lockfile.
 
-If PowerShell blocks activation, a session-only workaround is:
+Run commands below from the repository root. Activation is optional if you use `.venv/Scripts/python.exe` explicitly.
+
+## Quick execution smoke test
+
+These fixtures are **artificial, not PaySim**, and must not be used as fraud-quality evidence. The fixture generator refuses to overwrite an existing directory.
 
 ```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\.venv\Scripts\Activate.ps1
+python scripts/testing/create_smoke_data.py
+python scripts/run_flower.py --data-dir data/smoke --batch-size 64
 ```
 
-If `.venv` already exists and works, **do not recreate it unnecessarily**.
+The launcher runs exactly three Ray-backed Flower clients, two rounds, and one local epoch per round. It exits unsuccessfully unless the server's saved status confirms completion. It uses absolute data/output paths and writes into a unique folder under `results/runs/`.
 
-Install dependencies:
+Flower 1.28's direct `run_simulation` API is used for this local launcher. Flower marks this API deprecated; the dependency is pinned, and migration to the managed CLI/deployment runtime remains necessary before upgrading it. The managed `flwr run` launcher failed to start its SuperLink on the reviewed Windows machine. Ray's Windows support is experimental; use a separate Linux environment under WSL2 if native execution fails. Do not reuse the Windows virtual environment in WSL.
 
-```powershell
-uv pip install -r requirements.txt
-```
-
-When `flDetection.toml` is present and correctly configured (see **Section 8**), also run:
-
-```powershell
-uv pip install -e .
-```
-
-This installs **your own `crossbank` Python package in editable mode**, so imports such as `from crossbank.models.mlp import FraudMLP` work without manually editing `sys.path`.
-
-
----
-
-
-
-## 4. Get the PaySim dataset
-
-We are **not using the old `generate_demo_data.py` anymore**.
-
-1. Open <https://www.kaggle.com/datasets/moonknightmarvel/paysim>.
-2. Log in to Kaggle if necessary.
-3. Download the dataset ZIP.
-4. Extract the CSV file. Kaggle's file name may differ from `paysim.csv`.
-5. Rename the extracted transaction CSV to **`paysim.csv`**.
-6. Place it in **`crossbank-fl/data/raw/paysim.csv`**.
-
-
-**Dataset note:** PaySim is simulated mobile-money transaction data. It is **not** a dataset of actual banks, actual money-laundering layering, or real customer identities. Our three "banks" are artificial partitions for a federated-learning experiment.
-
----
-
-## 5. Prepare Bank A, Bank B and Bank C
-
-### What this step does
-
-The preparation code splits PaySim **chronologically** and partitions the training portion into three artificial banks with different transaction-amount distributions and fraud rates (**non-IID data**).
-
-The intended prepared files are:
-
-| File | Purpose |
-|---|---|
-| `bank_a.csv` | Bank A private training data |
-| `bank_b.csv` | Bank B private training data |
-| `bank_c.csv` | Bank C private training data |
-| `validation.csv` | Shared held-out development/validation split |
-| `test.csv` | Final evaluation split |
-
-
-
----
-
-## 6. Verify common FL preprocessing (do this BEFORE Flower)
-
-Every bank must use **exactly the same input features and scaling** for FedAvg to make sense.
-
-**Code location:** `src/crossbank/data/fl_preprocessing.py`  
-**Test location:** `scripts/testing/test_fl_preprocessing.py`.
-
-The current intended feature set has **nine columns**:
-
-1. `step`
-2. `amount`
-3. `oldbalanceOrg`
-4. `oldbalanceDest`
-5. `type_CASH_IN`
-6. `type_CASH_OUT`
-7. `type_DEBIT`
-8. `type_PAYMENT`
-9. `type_TRANSFER`
-
-The preprocessing uses the same fixed transforms across banks (for example, scaled `step`, log-scaled amounts/balances and one-hot transaction types). **It does not fit a separate `StandardScaler` for each bank.**
-
-
----
-
-## 7. Know which training programs are which
-
-| Script / files | What they really do | Needed for final system? |
-|---|---|---|
-| `train_bank.py` | Train **three independent** PyTorch models (A, B, C). No federation. | Useful comparison |
-| `train_centralized.py` | Train **one** PyTorch model from pooled A+B+C training transactions. | Important benchmark; planned/updating |
-| Old `train_baselines.py` | Trains Logistic Regression + a centralised MLP using the earlier pipeline; can be heavy and may use inconsistent preprocessing. | Keep as archive/reference, not the final fair benchmark |
-| `train_xgboost*.py` | Earlier model/feature experiments. | Optional archive |
-| `run_federated.py` | **Original starter's single-process FedAvg simulation**; not networked bank services. | Learning/debug reference |
-| `src/crossbank/fl/client_app.py` | Flower program that trains the shared model using one bank's local data. | **Yes — implement/test** |
-| `src/crossbank/fl/server_app.py` | Flower coordinator that sends weights and aggregates bank updates. | **Yes — implement/test** |
-
-### Step 7.1 — Optional: run independent bank training
-
-```powershell
-python scripts/training/train_bank.py --bank a
-python scripts/training/train_bank.py --bank b
-python scripts/training/train_bank.py --bank c
-```
----
-
-## 8. Flower: train collaboratively (current development stage)
-
-> **Status: IN PROGRESS.** The original starter ZIP does **not** contain a complete working Flower application. `client_app.py`, `server_app.py`, and `pyproject.toml` must be created, checked against the installed Flower version, and tested. **Do not treat the commands below as proof that a working app already exists.**
-
-### Step 8.1 — Confirm the three required files exist
-
-In the project root:
-
-```powershell
-Test-Path .\pyproject.toml
-Test-Path .\src\crossbank\fl\client_app.py
-Test-Path .\src\crossbank\fl\server_app.py
-```
-
-All three must print `True` before trying `flwr run`.
-
-- `pyproject.toml`: registers the application, dependencies, run settings and Flower components.
-- `client_app.py`: loads only the appropriate bank CSV, receives global weights, trains, returns updated weights.
-- `server_app.py`: initialises the global MLP, dispatches rounds, performs FedAvg and saves outputs.
-
-**Extra caution:** If you copied early draft Flower code from chat, test and adjust it for your **installed Flower version** first. Flower's API/configuration has evolved. For example, ensure the server's `ConfigRecord` and the client's `context.run_config` use consistent keys, and that results are saved to a known working directory.
-
-### Step 8.2 — Install Flower's simulation dependencies
-
-After `pyproject.toml` has been written correctly, from the root with `.venv` active:
-
-```powershell
-uv pip install -e ".[simulation]"
-```
-
-If your `pyproject.toml` has **no** `[project.optional-dependencies]` entry named `simulation`, use **both** commands instead:
-
-```powershell
-uv pip install -e .
-uv pip install "flwr[simulation]"
-```
-
-Check versions:
-
-```powershell
-python -c "import flwr, torch; print('Flower:', flwr.__version__); print('PyTorch:', torch.__version__)"
-flwr --help
-```
-
-**Windows warning:** Flower local simulation relies on Ray, which can require additional environment setup. If it fails on native Windows, use **WSL2 Ubuntu** for Flower/Ray and, later, Docker/Kubernetes. Do not mix Windows `.venv` executables with a WSL environment; create a fresh Linux `.venv` inside WSL.
-
-### Step 8.3 — Define a 3-bank local simulation
-
-Make sure the `[tool.flwr.app]`, `[tool.flwr.app.components]`, and the local simulation settings in `pyproject.toml` are valid for your installed version. The local federation must have **exactly 3 virtual SuperNodes** for A/B/C.
-
-On current Flower releases, the normal command is:
-
-```powershell
-flwr run . --stream
-```
-
-This assumes `pyproject.toml` defines a default **local federation with 3 SuperNodes**. An alternative on Flower releases supporting per-run federation overrides is:
+The registered ClientApp/ServerApp also remain available to Flower's CLI on supported setups:
 
 ```powershell
 flwr run . --federation-config "num-supernodes=3 client-resources-num-cpus=1" --stream
 ```
 
-Use `flwr run --help` if your installed version handles arguments differently.
+For that CLI route, override `data-dir` and `output-dir` with absolute paths using `--run-config`, since the managed runtime can execute in an extracted application directory.
 
-Official Flower instructions: <https://flower.ai/docs/framework/tutorial-quickstart-pytorch.html> and <https://flower.ai/docs/framework/how-to-run-simulations.html>.
-
-### Step 8.4 — First smoke-test settings
-
-Start small, **not with the whole 6-million-row training set**:
-
-- **3 banks**
-- **2 FL rounds**
-- **1 local epoch per bank per round**
-- **Up to 100,000 transactions per bank**, sampled reproducibly for smoke testing
-- **Batch size 1,024**
-- **Learning rate 0.001**
-
-With PaySim's severe class imbalance, small random samples can contain very few fraud cases. A smoke test only proves the pipeline runs; it does **not** establish final predictive performance.
-
-### Step 8.5 — What successful FL means
-
-The server initialises global weights → all three banks train their copies → server receives **three weight updates** → FedAvg aggregates them → a new round starts.
-
-**Important distinctions:**
-
-- A Flower **local simulation** may run virtual banks on one computer. That is **not yet** a deployment of three independent networked bank services.
-- A saved `global_model.pt` is meaningful only if training actually finished and the file was written successfully. The output path depends on implementation/working directory.
-- The previously saved `bank_*_pytorch.pt` files are **not** the inputs to FedAvg.
-- A model update being transmitted instead of a CSV is **not** a mathematical privacy guarantee.
-
----
-
-## 9. Test and compare model performance
-
-We want to answer: **Does collaboration help? What happens when a bank is slow or offline?**
-
-For fair experiments, use a consistent **network architecture, input features, preprocessing, training budget, and chronological validation/test split** wherever possible.
-
-1. **Independent banks:** three separately trained PyTorch models.
-2. **Centralised:** one PyTorch MLP trained on all A+B+C data (research upper/reference benchmark, not a privacy-preserving deployment).
-3. **Standard FedAvg:** three banks collaboratively train through Flower.
-4. **Resilient FedAvg:** proposed improvement that tolerates absent/slow clients.
-
-Measure at least:
-
-- **Fraud precision, recall and F1** (fraud is rare).
-- **Average precision / PR-AUC** (more useful than plain accuracy for severe imbalance).
-- **Training time per round and total completion time**.
-- **Successful aggregation rounds under failures/stragglers**.
-- **Model-quality change and delay when 0, 1, or more banks fail**.
-
-Choose prediction thresholds on **validation**, not test data. Use the **test set once** for final comparisons. Record random seed(s), configurations and CPU/GPU environment.
-
-**PaySim caveat:** Very high scores can partly reflect the simulator's account-balance patterns; they are not evidence that the model will work on real financial networks.
-
----
-
-## 10. Docker and Kubernetes — later steps, NOT finished
-
-**Do not run fictional `docker build` or `kubectl apply` commands yet.** We first need real Dockerfiles, container entrypoints, Flower deployment configuration, Kubernetes manifests, and a tested networking/storage layout.
-
-Planned sequence:
-
-1. Finish and validate local Flower training.
-2. Run the Flower deployment components as **separate local processes/services**.
-3. Create Docker images for server and bank clients.
-4. Set up a local Kubernetes cluster (e.g., Docker Desktop Kubernetes or Minikube).
-5. Deploy Flower server and bank services as Kubernetes workloads.
-6. Configure data mounts/secrets and avoid putting full PaySim CSVs inside Git or image layers.
-7. Deliberately stop/delay a bank and measure recovery/aggregation behaviour.
-8. Implement and benchmark our quorum/timeout (and if feasible staleness-aware) aggregation logic.
-
-Kubernetes **restarting a failed container** and the **FL coordinator accepting a quorum without waiting forever** are two different reliability mechanisms. Our research should measure both.
-
----
-
-## 11. Everyday workflow: coming back tomorrow
-
-Open VS Code → open `crossbank-fl` → open terminal → run:
+## Prepare PaySim
 
 ```powershell
-.\.venv\Scripts\Activate.ps1
-python --version
-Get-ChildItem .\data\processed\*.csv
+python scripts/data/download_paysim.py
+python scripts/data/prepare_banks.py
+python scripts/testing/test_fl_preprocessing.py
 ```
 
-Then choose **one** action:
+The public dataset is [PaySim on Kaggle](https://www.kaggle.com/datasets/moonknightmarvel/paysim). If download access requires account interaction, download it manually and put the transaction CSV at `data/raw/paysim.csv`. The downloader preserves an existing destination.
 
-| You want to... | What to do |
-|---|---|
-| Check bank data | Run the actual `test_fl_preprocessing.py` path |
-| Train bank-only baseline | Run `train_bank.py` (if present and compatible) |
-| Work on pooled PyTorch baseline | Create/finish `train_centralized.py` |
-| Run real FL logic | Finish/configure Flower then `flwr run . --stream` |
-| Work on reliability | Only after baseline Flower rounds work reliably |
-| Deploy to Kubernetes | Only after networking/Docker deployment works |
+Preparation uses:
 
----
+| Split | Time steps | Output |
+| --- | --- | --- |
+| Training | <=520 | `bank_a.csv`, `bank_b.csv`, `bank_c.csv` |
+| Validation | 521-632 | `validation.csv` |
+| Final test | >632 | `test.csv` |
 
-## 12. Common problems and fixes
+Files are written to `data/processed/` and excluded from Git. Preparation loads the full raw CSV into memory.
 
-### `ModuleNotFoundError: No module named 'crossbank'`
-
-You may be in the wrong folder or haven't installed your package. From the root:
+## Run the comparable MLP baselines
 
 ```powershell
-uv pip install -e .
+python scripts/training/train_bank.py --bank a
+python scripts/training/train_bank.py --bank b
+python scripts/training/train_bank.py --bank c
+python scripts/training/train_centralised.py
+python scripts/run_flower.py
 ```
 
-Requires a valid `pyproject.toml`. Until then, the old scripts may rely on manual `sys.path` setup.
+Defaults are a reproducible **100,000-row cap per bank**, batch size 1024, learning rate 0.001, seed 42, and two epochs for each standalone model versus two FL rounds of one local epoch. Use `--max-samples 0` for all training rows. Caps apply independently to each bank before pooling, so pooled and federated experiments see the same selected training rows.
 
-### `FileNotFoundError: data/processed/bank_a.csv`
+All paths use the same nine inputs: scaled step, log-scaled amount and two opening balances, and five one-hot transaction types. All use the same 9 -> 64 -> 32 -> 1 MLP, Adam, and class-weighted binary cross-entropy. Positive-class weights are calculated from each training population; single-class samples use unweighted loss. Flower resets Adam each round, whereas standalone training keeps Adam state across epochs. Record these differences when interpreting comparisons.
 
-Check that your terminal is at the project root and that you've prepared the bank data:
+Standalone scripts accept `--epochs`; Flower accepts `--rounds`, `--local-epochs`, and `--round-timeout`. Common flags are `--data-dir`, `--output-dir`, `--batch-size`, `--learning-rate`, `--max-samples`, and `--seed`. Use `--help`.
+
+`python scripts/run_federated.py` is a separate educational sequential FedAvg run. It shares preprocessing and training with Flower, but it is not evidence of networked deployment.
+
+## Outputs and final evaluation
+
+Each new run gets its own directory; tracked legacy model files are preserved.
+
+- `manifest.json`: configuration, package versions, platform, feature/preprocessing version, dataset kind.
+- `metrics.json`: validation metrics and training timing. Flower includes round 0 and every completed round, reply counts, and training-row counts.
+- `round-000.pt`, `round-001.pt`, ...: Flower weights, threshold, round, feature contract, and configuration.
+- `global_model.pt`: final FL checkpoint; standalone baselines save `model.pt`.
+- `status.json`: Flower running/completed/failed status and completed rounds.
+
+Writes use temporary files and replacement. Checkpoints are reloadable for inference, but **automatic training resumption and coordinator crash recovery are not implemented**. The server's reply timeout applies after client selection; startup still waits for three available clients.
+
+When the experiment design is fixed, evaluate a selected checkpoint on the untouched final test split:
 
 ```powershell
-pwd
-Test-Path .\data\processed\bank_a.csv
+python scripts/testing/evaluate_checkpoint.py <path-to-global_model.pt>
 ```
 
-### `No such file ... scripts/training/train_bank.py`
+This uses the saved validation threshold without tuning on test data and writes a sibling `.test.json`. Old `bank_*_pytorch.pt` checkpoints used bank-specific scalers and are rejected by this new loader. Do not average them into a global model.
 
-Your file may still be located directly in `scripts`. Search:
+Run artifacts are ignored by Git; archive the selected experiment directories separately for your report. Small smoke-run scores establish execution only.
 
-```powershell
-Get-ChildItem .\scripts -Recurse -Filter train_bank.py
-```
+## Tests and remaining project work
 
-### `flwr is not recognized`
+`python -m pytest -q` covers partitioning, preprocessing, training reproducibility, invalid settings, single-class training, checkpoint round trips, message-config overrides, and two actual Flower strategy rounds through an in-memory test Grid. A separate `run_flower.py` smoke run validates Ray worker execution.
 
-Activate `.venv`; confirm Flower installed:
+Next: containerise separate bank/coordinator services, deploy Kubernetes workloads with isolated mounts and durable coordinator state, then implement and compare fixed/adaptive quorum, timeout, stale-version and recovery policies. Add controlled failure experiments and repeated-seed systems/ML measurements.
 
-```powershell
-.\.venv\Scripts\Activate.ps1
-python -c "import flwr; print(flwr.__version__)"
-```
-
-### `No pyproject.toml`, `Missing Flower component`, or `No default federation`
-
-The Flower application configuration hasn't been created or completed. Go back to **Section 8**; the old starter archive doesn't include a ready-to-run Flower app.
-
-
-
-### `Execution of scripts is disabled on this system`
-
-See the session-only PowerShell execution policy command in Section 2.
-
----
-
-## 13. Project status checklist
-
-- [x] Downloaded and inspected PaySim (in the development work completed so far)
-- [x] Chronological train/validation/test preparation
-- [x] Three non-IID bank training partitions
-- [x] Early Logistic Regression and XGBoost exploratory benchmarks
-- [x] Independent PyTorch bank experiments (older bank-specific scaling)
-- [x] Shared nine-feature preprocessing test passed
-- [ ] Refactored, fair centralised PyTorch baseline using shared preprocessing
-- [ ] Complete, tested Flower `ClientApp` + `ServerApp` + `pyproject.toml`
-- [ ] Flower FedAvg smoke test with all 3 banks
-- [ ] Global validation/test evaluation and repeatable experiment logs
-- [ ] True separated-service Flower deployment
-- [ ] Docker container images
-- [ ] Kubernetes deployment
-- [ ] Client failure/straggler/quorum-aware coordination
-- [ ] Final performance and reliability experiments
-
-**What to work on next:** Verify/create `pyproject.toml`, `src/crossbank/fl/client_app.py`, and `src/crossbank/fl/server_app.py`; get **one three-bank Flower FedAvg run** working before changing the cloud infrastructure.
-
----
-
-## 14. Research and documentation links
-
-- [Flower — PyTorch quickstart](https://flower.ai/docs/framework/tutorial-quickstart-pytorch.html)
-- [Flower — simulation guide](https://flower.ai/docs/framework/how-to-run-simulations.html)
-- [PyTorch](https://pytorch.org/)
-- [uv documentation](https://docs.astral.sh/uv/)
-- [Kaggle PaySim dataset](https://www.kaggle.com/datasets/moonknightmarvel/paysim)
-- [Docker documentation](https://docs.docker.com/)
-- [Kubernetes documentation](https://kubernetes.io/docs/home/)
-
-**Security/data note:** Never commit actual sensitive banking data, tokens, passwords, or `.venv` directories. Keep large raw/processed data and generated model checkpoints outside version control when appropriate.
+See [architecture](docs/ARCHITECTURE.md), [experiment plan](experiments/PLAN.md), and [report outline](docs/REPORT_NOTES.md). The [initial repository audit](docs/PROJECT_REPO_ANALYSIS.md) describes the state **before this baseline repair**. `configs/default.yaml` is a historical research plan, not active runtime configuration.
