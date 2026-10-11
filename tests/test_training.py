@@ -117,11 +117,16 @@ def test_flower_two_rounds_and_validation_only(data_dir, tmp_path):
     output = tmp_path / "runs"
     run_server(data_dir, output)
     run = next(output.iterdir())
-    assert json.loads((run / "status.json").read_text())["completed_rounds"] == 2
-    history = json.loads((run / "metrics.json").read_text())
-    assert [row["round"] for row in history] == [0, 1, 2]
-    assert history[1]["clients"] == history[2]["clients"] == 3
-    model, checkpoint = load_checkpoint(run / "global_model.pt")
+    assert json.loads((run / "training_status.json").read_text())["completed_rounds"] == 2
+    history = json.loads((run / "validation_results.json").read_text())
+    assert [row["training_round"] for row in history] == [0, 1, 2]
+    assert history[1]["banks_responded"] == history[2]["banks_responded"] == 3
+    assert "average_precision" in history[-1] and "fraud_detected" in history[-1]
+    assert "pr_auc" not in history[-1] and "tp" not in history[-1]
+    assert "Fraud recall (fraud caught)" in (run / "results_summary.txt").read_text()
+    assert (run / "untrained_model.pt").is_file()
+    assert (run / "model_after_round_002.pt").is_file()
+    model, checkpoint = load_checkpoint(run / "final_model.pt")
     assert checkpoint["round"] == 2
     assert np.isfinite(scores(model, load_fl_data(data_dir / "validation.csv")[0])).all()
 
@@ -131,8 +136,8 @@ def test_synchronous_baseline_fails_without_three_replies(data_dir, tmp_path):
     with pytest.raises(RuntimeError, match="all three banks"):
         run_server(data_dir, output, drop_client=True)
     run = next(output.iterdir())
-    assert json.loads((run / "status.json").read_text())["status"] == "failed"
-    assert not (run / "global_model.pt").exists()
+    assert json.loads((run / "training_status.json").read_text())["status"] == "failed"
+    assert not (run / "final_model.pt").exists()
 
 
 def test_client_uses_message_config_and_only_its_bank(data_dir):
