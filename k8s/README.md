@@ -8,6 +8,21 @@ Run all commands from the repository root in PowerShell. You need the Docker ima
 
 ## Terms, files and command flags
 
+For everyday use, [project.ps1](../project.ps1) wraps the detailed commands below:
+
+| Shortcut (run from repository root) | When / what it does |
+| --- | --- |
+| `.\project.ps1 k8s setup` | Once after preparing data/building the image: create storage and upload data to fresh volumes. Skip when already loaded. |
+| `.\project.ps1 k8s build` | Build the shared Docker image; same as `docker build` shortcut. Follow the image-refresh instructions below for existing pods. |
+| `.\project.ps1 k8s start` | Apply workloads and wait for all four services to be ready. |
+| `.\project.ps1 k8s train` | Submit training and follow logs; replaces the previous Job only if it completed. |
+| `.\project.ps1 k8s results` | Copy results locally and print the newest saved status/summary; coordinator must be running. |
+| `.\project.ps1 k8s status` | List pods. |
+| `.\project.ps1 k8s logs` | Show recent coordinator and bank logs. |
+| `.\project.ps1 k8s stop` | Scale services to zero while retaining storage; interrupts active training. |
+
+Run `.\project.ps1 help` for the first-time sequence. These shortcuts do not create or reset the cluster. A missing `docker-desktop` context requires configuring Docker Desktop Kubernetes first. An active/failed submission Job is kept for investigation; inspect logs and actual training status before manually changing it. Submit only one experiment at a time.
+
 A **pod** runs a container. A **Deployment** keeps the requested number of pods running. A **Service** gives pods a stable network address. A **namespace** groups this project's resources. A **persistent volume claim (PVC)** requests storage that survives pod replacement. A **Job** runs a task to completion; ours submits training.
 
 | File | Purpose / when used |
