@@ -1,0 +1,67 @@
+name: crossbank
+x-runtime: &runtime
+  image: crossbank-fl:local
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+  init: true
+  healthcheck:
+    test: ["CMD", "python", "/app/docker/check_health.py"]
+    interval: 10s
+    timeout: 5s
+    retries: 12
+    start_period: 20s
+  cpus: 1.0
+  mem_limit: 2g
+services:
+  coordinator:
+    <<: *runtime
+    command: ["flower-superlink", "--insecure", "--isolation", "subprocess", "--serverappio-api-address", "127.0.0.1:9091", "--fleet-api-address", "0.0.0.0:9092", "--control-api-address", "0.0.0.0:9093", "--health-server-address", "0.0.0.0:9098", "--database", "/state/flower.db", "--storage-dir", "/state/objects"]
+    volumes:
+      - type: bind
+        source: ../data/deployment/coordinator
+        target: /data
+        read_only: true
+        bind: {create_host_path: false}
+      - results:/results
+      - coordinator-state:/state
+  bank-a:
+    <<: *runtime
+    command: ["flower-supernode", "--insecure", "--isolation", "subprocess", "--superlink", "coordinator:9092", "--node-config", "partition-id=0", "--clientappio-api-address", "127.0.0.1:9094", "--health-server-address", "0.0.0.0:9098"]
+    depends_on:
+      coordinator: {condition: service_healthy}
+    volumes:
+      - type: bind
+        source: ../data/deployment/bank-a
+        target: /data
+        read_only: true
+        bind: {create_host_path: false}
+  bank-b:
+    <<: *runtime
+    command: ["flower-supernode", "--insecure", "--isolation", "subprocess", "--superlink", "coordinator:9092", "--node-config", "partition-id=1", "--clientappio-api-address", "127.0.0.1:9094", "--health-server-address", "0.0.0.0:9098"]
+    depends_on:
+      coordinator: {condition: service_healthy}
+    volumes:
+      - type: bind
+        source: ../data/deployment/bank-b
+        target: /data
+        read_only: true
+        bind: {create_host_path: false}
+  bank-c:
+    <<: *runtime
+    command: ["flower-supernode", "--insecure", "--isolation", "subprocess", "--superlink", "coordinator:9092", "--node-config", "partition-id=2", "--clientappio-api-address", "127.0.0.1:9094", "--health-server-address", "0.0.0.0:9098"]
+    depends_on:
+      coordinator: {condition: service_healthy}
+    volumes:
+      - type: bind
+        source: ../data/deployment/bank-c
+        target: /data
+        read_only: true
+        bind: {create_host_path: false}
+  submit:
+    image: crossbank-fl:local
+    profiles: ["tools"]
+    command: ["flwr", "run", "/app", "local-deployment", "--run-config", "/app/docker/run-config.toml", "--stream"]
+volumes:
+  results:
+  coordinator-state:

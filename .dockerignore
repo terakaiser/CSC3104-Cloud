@@ -1,0 +1,13 @@
+**
+!pyproject.toml
+!src/
+!src/crossbank/
+!src/crossbank/**
+!docker/
+!docker/Dockerfile
+!docker/requirements.txt
+!docker/flower-config.toml
+!docker/run-config.toml
+!docker/check_health.py
+**/__pycache__/
+**/*.pyc
