@@ -29,6 +29,7 @@ packages = ["src/crossbank"]
 
 [tool.flwr.app]
 publisher = "cloud-team-18"
+fab-include = ["src/crossbank/**/*.py"]
 
 [tool.flwr.app.components]
 serverapp = "crossbank.fl.server_app:app"
