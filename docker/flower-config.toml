@@ -1,3 +1,0 @@
-[superlink.local-deployment]
-address = "coordinator:9093"
-insecure = true

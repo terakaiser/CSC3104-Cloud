@@ -1,8 +1,0 @@
-# Deployment runtime: no Ray simulation workers or research/download tools.
-# Keep these versions aligned with the verified local baseline in uv.lock.
-flwr==1.28.0
-torch==2.14.1
-numpy==2.5.4
-pandas==3.0.6
-scikit-learn==1.9.1
-tzdata
