@@ -1,2 +1,0 @@
-# Full development/research environment; core dependencies live in pyproject.toml.
--e .[dev,data,research]
