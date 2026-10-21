@@ -1,0 +1,334 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: bank-fl
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: results
+  namespace: bank-fl
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: coordinator
+  namespace: bank-fl
+spec:
+  type: ClusterIP
+  selector:
+    app: coordinator
+  ports:
+  - name: fleet
+    port: 9092
+    targetPort: 9092
+  - name: control
+    port: 9093
+    targetPort: 9093
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coordinator
+  namespace: bank-fl
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: coordinator
+  template:
+    metadata:
+      labels:
+        app: coordinator
+        project: bank-fl
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+      - name: coordinator
+        image: bank-fl:0.1.0
+        imagePullPolicy: IfNotPresent
+        command:
+        - flower-superlink
+        - --insecure
+        - --health-server-address
+        - 0.0.0.0:9095
+        - --serverappio-api-address
+        - 127.0.0.1:9091
+        volumeMounts:
+        - name: manifest
+          mountPath: /data/manifest.json
+          readOnly: true
+        - name: results
+          mountPath: /results
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        resources:
+          requests:
+            cpu: 250m
+            memory: 256Mi
+          limits:
+            cpu: '1'
+            memory: 1Gi
+        startupProbe:
+          grpc:
+            port: 9095
+          periodSeconds: 2
+          failureThreshold: 60
+        readinessProbe:
+          grpc:
+            port: 9095
+          periodSeconds: 5
+        livenessProbe:
+          grpc:
+            port: 9095
+          periodSeconds: 10
+          failureThreshold: 3
+      volumes:
+      - name: manifest
+        hostPath:
+          path: /mnt/bank-fl/manifest.json
+          type: File
+      - name: results
+        persistentVolumeClaim:
+          claimName: results
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bank-1
+  namespace: bank-fl
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: bank-1
+  template:
+    metadata:
+      labels:
+        app: bank-1
+        project: bank-fl
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+      - name: bank-1
+        image: bank-fl:0.1.0
+        imagePullPolicy: IfNotPresent
+        command:
+        - flower-supernode
+        - --insecure
+        - --health-server-address
+        - 0.0.0.0:9095
+        - --superlink
+        - coordinator:9092
+        - --clientappio-api-address
+        - 127.0.0.1:9094
+        - --node-config
+        - bank-id="bank-1"
+        volumeMounts:
+        - name: data
+          mountPath: /data
+          readOnly: true
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        resources:
+          requests:
+            cpu: 250m
+            memory: 256Mi
+          limits:
+            cpu: '1'
+            memory: 1Gi
+        startupProbe:
+          grpc:
+            port: 9095
+          periodSeconds: 2
+          failureThreshold: 60
+        readinessProbe:
+          grpc:
+            port: 9095
+          periodSeconds: 5
+        livenessProbe:
+          grpc:
+            port: 9095
+          periodSeconds: 10
+          failureThreshold: 3
+      volumes:
+      - name: data
+        hostPath:
+          path: /mnt/bank-fl/bank-1
+          type: Directory
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bank-2
+  namespace: bank-fl
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: bank-2
+  template:
+    metadata:
+      labels:
+        app: bank-2
+        project: bank-fl
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+      - name: bank-2
+        image: bank-fl:0.1.0
+        imagePullPolicy: IfNotPresent
+        command:
+        - flower-supernode
+        - --insecure
+        - --health-server-address
+        - 0.0.0.0:9095
+        - --superlink
+        - coordinator:9092
+        - --clientappio-api-address
+        - 127.0.0.1:9094
+        - --node-config
+        - bank-id="bank-2"
+        volumeMounts:
+        - name: data
+          mountPath: /data
+          readOnly: true
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        resources:
+          requests:
+            cpu: 250m
+            memory: 256Mi
+          limits:
+            cpu: '1'
+            memory: 1Gi
+        startupProbe:
+          grpc:
+            port: 9095
+          periodSeconds: 2
+          failureThreshold: 60
+        readinessProbe:
+          grpc:
+            port: 9095
+          periodSeconds: 5
+        livenessProbe:
+          grpc:
+            port: 9095
+          periodSeconds: 10
+          failureThreshold: 3
+      volumes:
+      - name: data
+        hostPath:
+          path: /mnt/bank-fl/bank-2
+          type: Directory
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bank-3
+  namespace: bank-fl
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: bank-3
+  template:
+    metadata:
+      labels:
+        app: bank-3
+        project: bank-fl
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+      - name: bank-3
+        image: bank-fl:0.1.0
+        imagePullPolicy: IfNotPresent
+        command:
+        - flower-supernode
+        - --insecure
+        - --health-server-address
+        - 0.0.0.0:9095
+        - --superlink
+        - coordinator:9092
+        - --clientappio-api-address
+        - 127.0.0.1:9094
+        - --node-config
+        - bank-id="bank-3"
+        volumeMounts:
+        - name: data
+          mountPath: /data
+          readOnly: true
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        resources:
+          requests:
+            cpu: 250m
+            memory: 256Mi
+          limits:
+            cpu: '1'
+            memory: 1Gi
+        startupProbe:
+          grpc:
+            port: 9095
+          periodSeconds: 2
+          failureThreshold: 60
+        readinessProbe:
+          grpc:
+            port: 9095
+          periodSeconds: 5
+        livenessProbe:
+          grpc:
+            port: 9095
+          periodSeconds: 10
+          failureThreshold: 3
+      volumes:
+      - name: data
+        hostPath:
+          path: /mnt/bank-fl/bank-3
+          type: Directory
