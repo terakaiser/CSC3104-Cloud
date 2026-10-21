@@ -1,0 +1,79 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "bank-federation"
+version = "0.1.0"
+description = "A small, reproducible study of client-resilient federated fraud learning"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+  "flwr==1.22.0",
+  "torch==2.8.0",
+  "numpy==2.3.3",
+  "pandas==2.3.3",
+  "scikit-learn==1.7.2",
+  "matplotlib==3.10.6",
+  "psutil==7.1.0",
+  "PyYAML==6.0.3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==8.4.2", "ruff==0.13.3"]
+
+[project.scripts]
+bank-fl = "app.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app", "experiments"]
+
+[tool.flwr.app]
+publisher = "group18"
+
+[tool.flwr.app.components]
+serverapp = "app.server:app"
+clientapp = "app.client:app"
+
+[tool.flwr.app.config]
+mode = "resilient"
+rounds = 20
+quorum = 2
+banks = 3
+deadline = 30.0
+seed = 42
+epochs = 1
+batch-size = 256
+learning-rate = 0.01
+max-failures = 3
+startup-timeout = 90.0
+scenario = "healthy"
+slow-bank = "bank-3"
+delay = 0.0
+fault-attempt = 2
+label = "flower"
+
+[tool.flwr.federations]
+default = "local"
+
+[tool.flwr.federations.local]
+address = "127.0.0.1:9093"
+insecure = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
