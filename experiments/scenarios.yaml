@@ -1,0 +1,16 @@
+# Software defaults only. Freeze a pilot-derived deadline before research runs.
+seeds: [42, 43, 44]
+rounds: 20
+deadline: 30
+scenarios:
+  healthy:
+    scenario: healthy
+  slow:
+    scenario: slow
+    delay: 45
+    fault_attempt: 2
+  unavailable:
+    scenario: unavailable
+  stale:
+    scenario: stale
+    fault_attempt: 2
