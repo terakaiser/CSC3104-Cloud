@@ -39,6 +39,7 @@ def environment():
         "KUBECONFIG": str((ROOT / "kubeconfig").resolve()),
         "PYTHONUTF8": "1",
         "PYTHONIOENCODING": "utf-8",
+        "PYTHONUNBUFFERED": "1",  # Flower logs are read through a pipe.
         "PATH": str(Path(sys.executable).parent) + os.pathsep + os.environ.get("PATH", ""),
     }
 
