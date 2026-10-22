@@ -38,7 +38,7 @@ def config_from_args(args):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        prog="bank-fl", description="Group 18 · client-resilient federated fraud learning"
+        prog="bank-fl", description="Client-resilient federated fraud learning"
     )
     commands = parser.add_subparsers(dest="command", required=True)
     setup = commands.add_parser("setup-data", help="download and prepare the real ULB dataset")

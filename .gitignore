@@ -15,4 +15,5 @@ build/
 .env
 .DS_Store
 sources/
-planning/references/
+.cache/
+.tools/

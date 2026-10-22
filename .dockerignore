@@ -6,7 +6,11 @@ __pycache__
 .pytest_cache
 .ruff_cache
 sources
-planning
+.cache
+.tools
+.flwr
+docs
+tests
 data
 results
 .env

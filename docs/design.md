@@ -1,7 +1,6 @@
 # Design and guarantees
 
-The accepted scope is in `planning/ARCHITECTURE_PLAN.md`. This file describes the
-implemented system.
+This document describes the implemented runtime architecture and guarantees.
 
 ## Runtime
 
