@@ -41,6 +41,9 @@ def main(argv=None):
         prog="bank-fl", description="Client-resilient federated fraud learning"
     )
     commands = parser.add_subparsers(dest="command", required=True)
+    from app.demo import add_parser
+
+    add_parser(commands)
     setup = commands.add_parser("setup-data", help="download and prepare the real ULB dataset")
     setup.add_argument("--raw", type=Path, default=Path("data/raw"))
     setup.add_argument("--output", type=Path, default=Path("data/ulb"))
@@ -70,6 +73,11 @@ def main(argv=None):
     plots.add_argument("--output", type=Path, default=Path("results/figures"))
     args = parser.parse_args(argv)
     try:
+        if args.command == "demo":
+            from app.demo import dispatch
+
+            dispatch(args)
+            return
         if args.command == "setup-data":
             from app.download import setup_data
 

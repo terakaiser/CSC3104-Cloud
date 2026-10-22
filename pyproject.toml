@@ -59,6 +59,10 @@ default = "local"
 address = "127.0.0.1:9093"
 insecure = true
 
+[tool.flwr.federations.demo]
+address = "127.0.0.1:19093"
+insecure = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
