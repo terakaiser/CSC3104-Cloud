@@ -7,6 +7,14 @@ recovered bank can rejoin. Built with PyTorch, Flower, Docker, and Kubernetes.
 ## Prepare once
 
 Install **uv**, **Docker Desktop with Linux containers**, **kubectl**, and **kind**.
+
+```text
+winget install --exact --id astral-sh.uv
+winget install --exact --id Docker.DockerDesktop
+winget install --exact --id Kubernetes.kubectl
+winget install --exact --id Kubernetes.kind
+```
+
 Start Docker and run these commands from the repository root:
 
 ```text
