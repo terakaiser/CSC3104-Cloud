@@ -1,11 +1,11 @@
 # Resilient Bank Federation
 
-A small CSC3104 project studying whether federated fraud training can keep making
-progress when a simulated bank is slow or unavailable.
+A federated learning system for fraud detection that supports continued training
+when a simulated bank is slow or unavailable.
 
 **One coordinator. Three banks. One small classifier.** Python and Flower handle
 training and communication; Docker and Kubernetes provide deployment and recovery.
-There is no web application or database service.
+The system provides a command-line interface for training, evaluation, and deployment.
 
 ## Start here
 
@@ -177,10 +177,10 @@ in returned processed-example counts.
 - `experiments/`: repeated runs, pooled baseline, evaluation, plotting and fault injection.
 - `k8s/`: a three-bank manifest plus a generator for three or five banks.
 - `tests/`: protocol, lifecycle, data, metric and deployment checks.
-- [Design](docs/design.md), [deployment](docs/deployment.md), [testing](docs/testing.md),
-  [report outline](docs/report-outline.md), and [verification record](docs/verification.md).
+- [System design](docs/design.md), [deployment](docs/deployment.md), and
+  [testing and experiment methodology](docs/testing.md).
 
 Raw training data stays in each bank's mount during FL. Updates are not protected
 by differential privacy or secure aggregation. This trusted-cluster prototype
 does not defend against malicious participants or provide coordinator failover.
-The final article must report those limits and measured results honestly.
+Evaluate model quality, participation, and timing together when comparing modes.

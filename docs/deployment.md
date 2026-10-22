@@ -9,7 +9,7 @@ docker build -t bank-fl:0.1.0 .
 ```
 
 The image uses the locked CPU dependencies and runs as UID/GID 10001. It contains
-application code, not datasets or course documents. The cluster examples use
+application code, not datasets or development artifacts. The cluster examples use
 unencrypted Flower connections inside a trusted private environment. Do not
 expose the service to the public internet; configure Flower TLS first if the
 deployment crosses an untrusted network.
@@ -28,7 +28,7 @@ Keep a separate terminal open for the data mount. Replace the example path with
 the absolute prepared-data directory:
 
 ```text
-minikube mount "C:\SIT_Projects\CSC3104-Cloud\data\cluster:/mnt/bank-fl"
+minikube mount "<absolute-data-directory>:/mnt/bank-fl"
 ```
 
 The mount must expose readable directories and files to UID 10001. Then:
@@ -49,7 +49,7 @@ uv run flwr run . local --stream --run-config "rounds=8 deadline=30.0"
 The coordinator mounts only `/mnt/bank-fl/manifest.json`. Each bank mounts only
 `/mnt/bank-fl/bank-N`. Outputs go to a 1 GiB persistent volume claim. A default
 storage class is required. Data is mounted read-only. The manifest is deliberately
-for a single-node coursework cluster; hostPath data must exist on the worker.
+for a single-node development cluster; hostPath data must exist on the worker.
 
 On a Linux cloud VM, place prepared data at `/mnt/bank-fl`, ensure it is readable
 by UID 10001, and use the same manifest. Load the image into that cluster's
@@ -128,9 +128,9 @@ delete result storage. Keep the host dataset and exported evidence.
 - Bank restart takes time: Flower heartbeat expiry and Python startup are part
   of measured recovery. Do not count pod readiness as a returned model update.
 
-## Verified alternative: kind on Docker Desktop
+## Alternative: kind on Docker Desktop
 
-The implementation was also checked on a single-node kind cluster. Install kind,
+To use a single-node kind cluster, install kind,
 prepare `data/processed`, and save this as `results/kind.yaml` (adjust the host path):
 
 ```yaml
@@ -139,7 +139,7 @@ apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
 - role: control-plane
   extraMounts:
-  - hostPath: C:/SIT_Projects/CSC3104-Cloud/data/processed
+  - hostPath: <absolute-data-directory>
     containerPath: /mnt/bank-fl
     readOnly: true
 ```
