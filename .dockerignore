@@ -8,6 +8,7 @@ __pycache__
 sources
 .cache
 .tools
+.demo
 .flwr
 docs
 tests

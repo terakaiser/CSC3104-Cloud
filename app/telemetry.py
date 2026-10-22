@@ -100,7 +100,21 @@ class RunLog:
         self.events.write(json.dumps(record, allow_nan=False) + "\n")
         self.events.flush()
         if name in {"committed", "deadline", "finished", "startup_failed"}:
-            print(f"[{record['elapsed_seconds']:7.2f}s] {name}: {details}", flush=True)
+            if name == "committed":
+                banks = ", ".join(details.get("accepted", ["pooled training"]))
+                message = f"Round {details['version']} committed - {banks} contributed"
+            elif name == "deadline":
+                message = (
+                    f"Attempt {details['attempt']} missed its deadline - "
+                    f"{details['valid']}/{details['required']} required replies; model unchanged"
+                )
+            elif name == "startup_failed":
+                message = f"Startup failed - need {details['required']} available banks"
+            else:
+                message = (
+                    f"Training {details['status']} - {details['committed_rounds']} rounds committed"
+                )
+            print(f"[{record['elapsed_seconds']:7.2f}s] {message}", flush=True)
 
     def round(self, **row):
         self.writer.writerow(row)
