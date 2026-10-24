@@ -2,7 +2,6 @@
 
 import json
 import os
-import shutil
 import socket
 import subprocess
 import sys
@@ -12,6 +11,7 @@ from pathlib import Path
 
 import psutil
 
+from app.bundle import stage_bundle
 from app.config import RunConfig
 from app.data import read_manifest
 
@@ -58,19 +58,7 @@ def launch(config: RunConfig, data: Path, output: Path):
     runtime = output / ("flower-runtime-" + uuid.uuid4().hex[:8])
     runtime.mkdir(parents=True)
     root = Path(__file__).resolve().parents[1]
-    # Build a minimal application bundle, excluding source documents and datasets.
-    package = runtime / "package"
-    package.mkdir()
-    shutil.copy(root / "pyproject.toml", package)
-    # Flower 1.22 matches ignore rules against absolute paths. Copying the root
-    # "results/" rule here would exclude the entire staged bundle.
-    (package / ".gitignore").write_text("__pycache__/\n", encoding="utf-8")
-    shutil.copytree(root / "app", package / "app", ignore=shutil.ignore_patterns("__pycache__"))
-    shutil.copytree(
-        root / "experiments",
-        package / "experiments",
-        ignore=shutil.ignore_patterns("__pycache__"),
-    )
+    package = stage_bundle(runtime, root)
     env = os.environ.copy()
     env.update(
         {

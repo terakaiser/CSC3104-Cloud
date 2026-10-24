@@ -13,6 +13,8 @@ from pathlib import Path
 import psutil
 import yaml
 
+from app.bundle import stage_bundle
+
 ROOT = Path(".demo")
 CLUSTER = "bank-fl-demo"
 IMAGE = "bank-fl:demo"
@@ -42,16 +44,6 @@ def environment():
         "PYTHONUNBUFFERED": "1",  # Flower logs are read through a pipe.
         "PATH": str(Path(sys.executable).parent) + os.pathsep + os.environ.get("PATH", ""),
     }
-
-
-def stage_bundle(output):
-    package = output / "package"
-    package.mkdir()
-    shutil.copy("pyproject.toml", package)
-    (package / ".gitignore").write_text("__pycache__/\n", encoding="utf-8")
-    for name in ("app", "experiments"):
-        shutil.copytree(name, package / name, ignore=shutil.ignore_patterns("__pycache__"))
-    return package
 
 
 def command(*args, capture=False):
