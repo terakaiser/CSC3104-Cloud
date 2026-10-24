@@ -29,23 +29,24 @@ class LocalTransport:
     def poll(self):
         replies = []
         for bank, (request, future) in list(self.pending.items()):
-            if future.done():
-                del self.pending[bank]
-                try:
-                    replies.append(future.result())
-                except Exception as exc:
-                    replies.append(
-                        Reply(
-                            request.run_id,
-                            request.attempt,
-                            request.version,
-                            bank,
-                            request.request_id,
-                            [],
-                            0,
-                            error=f"{type(exc).__name__}: {exc}",
-                        )
+            if not future.done():
+                continue
+            del self.pending[bank]
+            try:
+                replies.append(future.result())
+            except Exception as exc:
+                replies.append(
+                    Reply(
+                        request.run_id,
+                        request.attempt,
+                        request.version,
+                        bank,
+                        request.request_id,
+                        [],
+                        0,
+                        error=f"{type(exc).__name__}: {exc}",
                     )
+                )
         return replies
 
     def close(self):

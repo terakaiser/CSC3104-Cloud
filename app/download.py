@@ -8,7 +8,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-from app.data import prepare, read_manifest
+from app.data import partition_path, prepare, read_manifest
 
 DATASET_URL = "https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud"
 DOWNLOAD_URL = (
@@ -43,14 +43,19 @@ def download_csv(raw: Path) -> Path:
     try:
         with tempfile.TemporaryDirectory(prefix=".ulb-", dir=raw) as temporary:
             archive = Path(temporary) / "dataset.zip"
-            with urllib.request.urlopen(DOWNLOAD_URL, timeout=60) as source:
-                with archive.open("wb") as destination:
-                    shutil.copyfileobj(source, destination)
+            with (
+                urllib.request.urlopen(DOWNLOAD_URL, timeout=60) as source,
+                archive.open("wb") as destination,
+            ):
+                shutil.copyfileobj(source, destination)
             # Extract only the expected file, never arbitrary archive paths.
             candidate = Path(temporary) / "creditcard.csv"
-            with zipfile.ZipFile(archive) as bundle:
-                with bundle.open("creditcard.csv") as source, candidate.open("wb") as destination:
-                    shutil.copyfileobj(source, destination)
+            with (
+                zipfile.ZipFile(archive) as bundle,
+                bundle.open("creditcard.csv") as source,
+                candidate.open("wb") as destination,
+            ):
+                shutil.copyfileobj(source, destination)
             verify_csv(candidate)
             if target.exists():
                 verify_csv(target)
@@ -86,10 +91,9 @@ def setup_data(raw: Path, output: Path, *, banks: int = 3, seed: int = 42):
                 f"{output} contains different data or settings; "
                 "choose a different --output directory"
             )
-        required = [output / f"bank-{i}" / "train.npz" for i in range(1, banks + 1)]
-        required += [
-            output / "evaluation" / f"{split}-bank-{i}.npz"
-            for split in ("validation", "test")
+        required = [
+            partition_path(output, split, f"bank-{i}")
+            for split in ("train", "validation", "test")
             for i in range(1, banks + 1)
         ]
         if not all(path.is_file() for path in required):

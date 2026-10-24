@@ -15,6 +15,12 @@ def write_json(path: Path, value):
     path.write_text(json.dumps(value, indent=2, allow_nan=False) + "\n", encoding="utf-8")
 
 
+def partition_path(root: Path, split: str, bank: str) -> Path:
+    if split == "train":
+        return root / bank / "train.npz"
+    return root / "evaluation" / f"{split}-{bank}.npz"
+
+
 def synthetic_frame(rows: int, seed: int) -> pd.DataFrame:
     """Deliberately synthetic fixture for software checks, never research evidence."""
     if rows < 1000:
@@ -102,10 +108,9 @@ def prepare(output: Path, *, csv: Path | None = None, rows=6000, banks=3, seed=4
         for i, indices in enumerate(groups):
             bank = f"bank-{i + 1}"
             # Only train.npz is mounted into each training bank.
-            directory = output / (bank if name == "train" else "evaluation")
-            directory.mkdir(exist_ok=True)
-            filename = "train.npz" if name == "train" else f"{name}-{bank}.npz"
-            np.savez_compressed(directory / filename, x=x[indices], y=y[indices], ids=indices)
+            path = partition_path(output, name, bank)
+            path.parent.mkdir(exist_ok=True)
+            np.savez_compressed(path, x=x[indices], y=y[indices], ids=indices)
             manifest["partitions"][name][bank] = {
                 "samples": len(indices),
                 "fraud": int(y[indices].sum()),
@@ -125,11 +130,6 @@ def read_manifest(root: Path):
 
 
 def pooled(root: Path, split: str, banks: int):
-    paths = [
-        root / f"bank-{i + 1}" / "train.npz"
-        if split == "train"
-        else root / "evaluation" / f"{split}-bank-{i + 1}.npz"
-        for i in range(banks)
-    ]
+    paths = [partition_path(root, split, f"bank-{i + 1}") for i in range(banks)]
     parts = [read_partition(path) for path in paths]
     return np.concatenate([p[0] for p in parts]), np.concatenate([p[1] for p in parts])
