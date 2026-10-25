@@ -28,6 +28,15 @@ def test_demo_cli_routes_defaults(workspace, monkeypatch):
     assert calls == [(30, 30)]
 
 
+def test_demo_dashboard_cli_routes_port(workspace, monkeypatch):
+    from app import dashboard
+
+    calls = []
+    monkeypatch.setattr(dashboard, "serve", lambda port: calls.append(port))
+    main(["demo", "dashboard", "--port", "9000"])
+    assert calls == [9000]
+
+
 def test_missing_tools_fail_before_dataset_or_cluster_changes(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(demo.shutil, "which", lambda name: None if name == "kind" else name)
