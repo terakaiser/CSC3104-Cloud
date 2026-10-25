@@ -10,13 +10,17 @@ ENV PYTHONUNBUFFERED=1 \
     PATH=/app/.venv/bin:$PATH
 
 WORKDIR /app
-COPY pyproject.toml uv.lock ./
-COPY app ./app
-COPY experiments ./experiments
-# uv.lock and the explicit CPU index in pyproject.toml avoid a CUDA dependency.
 RUN pip install --no-cache-dir uv==0.11.6 \
-    && uv sync --frozen --no-dev --no-cache --python /usr/local/bin/python \
     && groupadd --gid 10001 bankfl \
     && useradd --uid 10001 --gid bankfl --create-home bankfl
+# Install dependencies before copying the code, so Docker's layer cache keeps
+# this slow step (torch etc.) when only application code changes.
+# uv.lock and the explicit CPU index in pyproject.toml avoid a CUDA dependency.
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-cache --no-install-project --python /usr/local/bin/python
+COPY app ./app
+COPY experiments ./experiments
+# Fast step: installs only this project on top of the cached dependencies.
+RUN uv sync --frozen --no-dev --no-cache --python /usr/local/bin/python
 USER 10001:10001
 CMD ["flower-superlink", "--insecure", "--serverappio-api-address", "127.0.0.1:9091", "--health-server-address", "0.0.0.0:9095"]
