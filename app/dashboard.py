@@ -37,7 +37,7 @@ PAGE = r"""<!doctype html>
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top,#15263b 0,var(--bg) 50%);color:var(--text);font:14px/1.45 "Segoe UI",system-ui,sans-serif}
 main{max-width:1500px;margin:auto;padding:28px}header{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:22px}
 h1{font-size:24px;margin:0;letter-spacing:.2px}.eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:1.4px;color:var(--cyan);font-weight:700}
-.subtle,.muted{color:var(--muted)}.toolbar{display:flex;align-items:center;gap:12px}button,select{background:#17263a;border:1px solid var(--line);color:var(--text);border-radius:7px;padding:9px 12px}
+.subtle,.muted{color:var(--muted)}button,select{background:#17263a;border:1px solid var(--line);color:var(--text);border-radius:7px;padding:9px 12px}
 .grid{display:grid;gap:14px}.stats{grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:14px}.cols{grid-template-columns:1.15fr .85fr}.thirds{grid-template-columns:1fr 1fr 1fr}
 .card{background:linear-gradient(145deg,rgba(20,32,49,.97),rgba(16,27,42,.97));border:1px solid var(--line);border-radius:11px;padding:16px;min-width:0;box-shadow:0 10px 30px #0002}
 .card h2{font-size:14px;margin:0 0 13px;display:flex;justify-content:space-between;align-items:center}.value{font-size:26px;font-weight:700;margin-top:6px}.label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)}
@@ -49,19 +49,24 @@ td,th{padding:9px 8px;border-bottom:1px solid #26364c;vertical-align:top}td code
 .pill{border:1px solid var(--line);border-radius:99px;padding:3px 8px;font-size:10px;color:var(--muted)}.blank{padding:24px;text-align:center;color:var(--muted)}
 .tabs{display:flex;gap:8px;border-bottom:1px solid var(--line);margin:0 0 16px}.tab{background:transparent;border:0;border-bottom:2px solid transparent;border-radius:0;color:var(--muted);padding:11px 16px;cursor:pointer}.tab.active{border-color:var(--cyan);color:var(--text)}.tab-panel[hidden]{display:none}
 .controls{display:flex;align-items:end;gap:12px;flex-wrap:wrap}.controls label{display:grid;gap:5px;color:var(--muted);font-size:11px}.controls input{width:120px;background:#0b1422;border:1px solid var(--line);border-radius:6px;color:var(--text);padding:9px}.primary{background:#145e63;border-color:#237d81;color:#efffff;font-weight:700;cursor:pointer}.primary:disabled{opacity:.5;cursor:not-allowed}.runSelect{min-width:260px}.notice{margin-top:10px;color:var(--muted);min-height:20px}.result-status{font-size:20px;font-weight:700}
-@media(max-width:950px){.cols,.thirds,.charts{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}main{padding:16px}header{align-items:flex-start}.toolbar{flex-wrap:wrap;justify-content:flex-end}}
+@media(max-width:950px){.cols,.thirds,.charts{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}main{padding:16px}header{align-items:flex-start}}
 </style>
 </head>
 <body><main>
 <header><div><div class="eyebrow">CSC3104 · Resilient bank federation</div><h1>Operations dashboard</h1><div id="updated" class="subtle">Connecting to the demo…</div></div>
-<div class="toolbar"><button id="refresh">Refresh</button></div></header>
+</header>
 <nav class="tabs" aria-label="Dashboard sections"><button class="tab active" data-tab="monitor">Live monitor</button><button class="tab" data-tab="results">Results</button></nav>
 <section class="tab-panel" id="monitorPanel">
-<article class="card" style="margin-bottom:14px"><h2>Start a training run <span class="pill" id="trainState">Ready</span></h2>
+<section class="grid cols" style="margin-bottom:14px"><article class="card"><h2>Start a training run <span class="pill" id="trainState">Ready</span></h2>
 <form id="trainForm" class="controls"><label>Training rounds<input id="roundInput" type="number" min="1" max="1000" value="30" required></label>
 <label>Attempt deadline (seconds)<input id="deadlineInput" type="number" min="0.001" step="any" value="30" required></label>
 <button class="primary" id="startTraining" type="submit">Start training</button></form>
 <div class="notice" id="trainMessage">Training runs on the prepared Kubernetes demo cluster. Results appear in the Results tab after export and evaluation.</div></article>
+<article class="card"><h2>Simulate self-healing</h2>
+<form id="faultForm" class="controls"><label>Bank to fail<select id="faultBank"><option>bank-1</option><option>bank-2</option><option>bank-3</option></select></label>
+<button class="primary" id="simulateFailure" type="submit" disabled>Delete bank pod</button></form>
+<div class="notice" id="faultMessage">Start training to enable one bank failure simulation.</div>
+<div id="faultTracker" class="subtle">Deleted pod and replacement details will appear here.</div></article></section>
 <section class="grid stats">
 <article class="card"><div class="label">Kubernetes cluster</div><div class="value" id="cluster">—</div><div class="subtle" id="clusterNote">Checking cluster</div></article>
 <article class="card"><div class="label">Ready pods</div><div class="value" id="podCount">—</div><div class="subtle">Coordinator + bank workers</div></article>
@@ -95,12 +100,14 @@ function badgeClass(s){return /completed|ready|running|committed|normal/i.test(s
 function chart(canvas,series,title,yLabel){const ctx=canvas.getContext("2d"),w=canvas.clientWidth,h=canvas.clientHeight,ratio=devicePixelRatio||1;canvas.width=w*ratio;canvas.height=h*ratio;ctx.scale(ratio,ratio);ctx.clearRect(0,0,w,h);ctx.fillStyle="#91a3ba";ctx.font="11px Segoe UI";ctx.fillText(title,8,14);if(!series.length){ctx.fillText("No data available",10,40);return}const all=series.flatMap(s=>s.points).filter(p=>Number.isFinite(p[0])&&Number.isFinite(p[1]));if(!all.length)return;const xmin=Math.min(...all.map(p=>p[0])),xmax=Math.max(...all.map(p=>p[0])),ymin=Math.min(0,...all.map(p=>p[1])),ymax=Math.max(...all.map(p=>p[1]));const pad={l:40,r:10,t:25,b:25},cw=w-pad.l-pad.r,ch=h-pad.t-pad.b;ctx.strokeStyle="#26364c";ctx.fillStyle="#91a3ba";ctx.lineWidth=1;for(let i=0;i<4;i++){let y=pad.t+ch*i/3;ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(w-pad.r,y);ctx.stroke()}ctx.fillText(fmt(ymax-(ymax-ymin)*.0,2),3,pad.t+4);ctx.fillText(fmt(ymin,2),3,h-pad.b);const X=x=>pad.l+(x-xmin)/(xmax-xmin||1)*cw,Y=y=>pad.t+ch-(y-ymin)/(ymax-ymin||1)*ch;const colors=["#62d6d0","#ffcb72","#ff7b82","#9c9aff"];series.forEach((s,i)=>{ctx.strokeStyle=colors[i%colors.length];ctx.fillStyle=ctx.strokeStyle;ctx.lineWidth=2;ctx.beginPath();s.points.forEach((p,j)=>j?ctx.lineTo(X(p[0]),Y(p[1])):ctx.moveTo(X(p[0]),Y(p[1])));ctx.stroke();s.points.forEach(p=>{ctx.beginPath();ctx.arc(X(p[0]),Y(p[1]),3,0,7);ctx.fill()})})}
 let activeTab="monitor";
 function setTab(name){activeTab=name;document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===name));el("monitorPanel").hidden=name!=="monitor";el("resultsPanel").hidden=name!=="results";if(window.lastData)renderRun(window.lastData);history.replaceState(null,"",name==="results"?"#results":"#monitor")}
+function formatEvent(event){const details=[];for(const key of ["attempt","version","bank","outcome","status","valid","required","committed_rounds"]){if(event[key]!==undefined&&event[key]!==null)details.push(`${key}=${Array.isArray(event[key])?event[key].join(","):event[key]}`)}if(event.accepted)details.push(`accepted=${event.accepted.join(",")}`);if(event.error)details.push(`error=${event.error}`);const elapsed=Number(event.elapsed_seconds);return `[${Number.isFinite(elapsed)?elapsed.toFixed(2)+"s":"time unknown"}] ${event.event||"event"}${details.length?" · "+details.join(" · "):""}`}
 function renderRun(d){const run=d.run||{},s=run.summary||{},ev=run.evaluation||{},final=ev.final||{},options=d.runs||[],selected=run.run_id||"",rounds=run.rounds||[];
-if(el("runSelect").dataset.current!==options.map(o=>o.id).join("|")){el("runSelect").innerHTML=options.map(o=>`<option value="${esc(o.id)}">${esc(o.label)}</option>`).join("");el("runSelect").dataset.current=options.map(o=>o.id).join("|")}if(selected)el("runSelect").value=selected;
+if(el("runSelect").dataset.current!==options.map(o=>o.id).join("|")){el("runSelect").innerHTML=options.map(o=>`<option value="${esc(o.id)}">${esc(o.label)}</option>`).join("");el("runSelect").dataset.current=options.map(o=>o.id).join("|")}el("runSelect").value=selected;
 el("progressBadge").textContent=selected?`${selected}${d.active?" · LIVE":""}`:"No run selected";
 el("resultTitle").textContent=s.status||"No run selected";
 el("resultMessage").textContent=d.active?"Training is still running. The final test evaluation will appear here after the run exports and evaluates its checkpoints.":ev.final?`Results for ${selected}. Metrics are calculated from the run's saved checkpoints and evaluation dataset.`:"No exported evaluation is available for this run yet.";
-const metrics=[["Committed rounds",s.committed_rounds],["Attempts",s.attempts],["Successful round rate",s.successful_round_rate===undefined?null:fmt(s.successful_round_rate*100,1)+"%"],["Processed examples",s.processed_examples_returned],["Average precision",final.pr_auc_average_precision===undefined?null:fmt(final.pr_auc_average_precision,4)],["F1 score",final.f1===undefined?null:fmt(final.f1,4)],["ROC-AUC",final.roc_auc===undefined?null:fmt(final.roc_auc,4)],["Training time",s.training_seconds===undefined?null:fmt(s.training_seconds,1)+" s"],["Participation",Object.entries(s.participation||{}).map(([k,v])=>`${k}: ${v}`).join(" · ")]];el("metrics").innerHTML=metrics.map(([k,v])=>`<div class="metric">${esc(cell(v))}<small>${esc(k)}</small></div>`).join("");
+const events=run.events||[];el("trainLog").textContent=events.length?events.slice(-80).map(formatEvent).join("\n"):d.active?"Waiting for events from the coordinator…":selected?"No training events recorded for this run.":"Start training to see coordinator events.";el("trainLog").scrollTop=el("trainLog").scrollHeight;
+const metrics=[["Committed rounds",s.committed_rounds],["Attempts",s.attempts],["Successful round rate",s.successful_round_rate===undefined?null:fmt(s.successful_round_rate*100,1)+"%"],["Processed examples",s.processed_examples_returned],["Average precision",final.pr_auc_average_precision===undefined?null:fmt(final.pr_auc_average_precision,4)],["F1 score",final.f1===undefined?null:fmt(final.f1,4)],["ROC-AUC",final.roc_auc===undefined?null:fmt(final.roc_auc,4)],["Training time",s.training_seconds===undefined?null:fmt(s.training_seconds,1)+" s"],["Participation",Object.entries(s.participation||{}).map(([k,v])=>`${k}: ${v}`).join(" · ")] ];el("metrics").innerHTML=metrics.map(([k,v])=>`<div class="metric">${esc(cell(v))}<small>${esc(k)}</small></div>`).join("");
 el("rounds").innerHTML=rounds.slice().reverse().map(r=>row([r.attempt,r.version,r.status,`${fmt(r.seconds,1)} s`,r.accepted,r.samples])).join("")||'<tr><td colspan="6" class="blank">Round records will appear when training starts.</td></tr>';
 const curve=ev.curve||[];const bank=ev.per_bank||{};el("bankMetrics").innerHTML=Object.entries(bank).map(([name,m])=>row([name,fmt(m.precision,3),fmt(m.recall,3),fmt(m.f1,3),fmt(m.pr_auc_average_precision,3),fmt(m.roc_auc,3),fmt(m.false_positive_rate,4)])).join("")||'<tr><td colspan="7" class="blank">Evaluation appears after the run is exported and evaluated.</td></tr>';el("evaluationNote").textContent=ev.synthetic_data?"Synthetic dataset: software-check metrics only, not fraud-detection evidence.":ev.threshold_rule||"";
 if(activeTab==="monitor")chart(el("roundChart"),[{points:rounds.map(r=>[Number(r.attempt),Number(r.seconds)])}],"Attempt duration (seconds)","seconds");if(activeTab==="results")chart(el("qualityChart"),[{points:curve.map(x=>[Number(x.version),Number(x.pr_auc_average_precision)])}],"Test average precision by model version","AP")}
@@ -111,11 +118,13 @@ el("kubeEvents").innerHTML=(d.kubernetes?.events||[]).map(e=>row([e.time,`${e.ty
 el("alerts").innerHTML=d.alerts.length?d.alerts.map(a=>`<div class="alert ${a.level}"><b>${esc(a.title)}</b><div>${esc(a.message)}</div></div>`).join(""):'<div class="alert">No issues detected in the latest snapshot.</div>';el("alertCount").textContent=d.alerts.length;
 const run=d.run||{},s=run.summary||{};el("training").textContent=d.active?"RUNNING":s.status||"IDLE";el("trainingNote").textContent=d.active?`${s.committed_rounds||0} committed · attempt ${run.latest_attempt||0}`:`${s.committed_rounds||0} committed rounds`;el("runStatus").textContent=s.status||"—";el("runNote").textContent=s.attempts?`${s.committed_rounds} / ${run.config?.rounds||"?"} rounds · ${fmt(s.successful_round_rate*100,0)}% success rate`:"No summary yet";
 const canStart=d.prepared&&d.kubernetes?.available;el("startTraining").disabled=d.active||!canStart;el("trainState").textContent=d.active?"Training in progress":!d.prepared?"Setup required":!d.kubernetes?.available?"Cluster unavailable":"Ready to train";const logLines=(d.training_log||"").trim().split("\n");const lastLog=logLines[logLines.length-1]||"";el("trainMessage").textContent=d.active?`Run ${run.run_id||"starting"} is active. Follow live progress here; open Results after it finishes.`:s.status?`Latest run: ${s.status}. Open Results to inspect its exported evaluation.`:!d.prepared?"Run `uv run bank-fl demo setup` before starting a training run.":!d.kubernetes?.available?`Kubernetes is unavailable: ${d.kubernetes?.error||"cluster connection failed"}`:lastLog||"Choose rounds and deadline, then start. Training runs through Flower on the Kubernetes demo cluster.";
+const fault=d.fault||{},record=fault.record;el("simulateFailure").disabled=!fault.available||fault.requested;el("faultMessage").textContent=record?.status==="ready"?`${record.bank} recovered and became Ready in ${fmt(record.fault_to_ready_seconds,1)} s. Only one simulation is allowed per run.`:record?.status==="timed_out"?"Replacement did not become Ready before the recovery timeout.":record?.status==="failed"?`Failure simulation failed: ${record.error||"unknown error"}`:fault.requested?"Failure injected; tracking pod replacement…":fault.available?"Choose a bank and delete its pod. Kubernetes should create a replacement while training continues.":d.active?"Training is starting; wait for the coordinator before simulating a failure.":"Start training to enable one bank failure simulation.";el("faultTracker").innerHTML=record?`<div>Bank: <b>${esc(record.bank)}</b> · Status: <b>${esc(record.status||"unknown")}</b></div><div>Deleted pod: <code>${esc(record.deleted_pod||"waiting")}</code></div><div>Replacement pod: <code>${esc(record.replacement_pod||"waiting for Kubernetes")}</code></div><div>Replacement UID: <code>${esc(record.replacement_uid||"—")}</code></div>`:"Deleted pod and replacement details will appear here.";
 renderRun(d);el("podLogs").textContent=d.kubernetes?.logs||d.kubernetes?.logs_error||"No pod logs available."}
-let busy=false;async function refresh(){if(busy)return;busy=true;try{const q=el("runSelect").value;const r=await fetch("/api/dashboard"+(q?"?run="+encodeURIComponent(q):""),{cache:"no-store"});const d=await r.json();if(!r.ok)throw new Error(d.error||"Dashboard refresh failed");render(d)}catch(e){el("updated").textContent="Dashboard update failed: "+e.message}finally{busy=false}}
-document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>setTab(b.dataset.tab)));el("refresh").addEventListener("click",refresh);el("runSelect").addEventListener("change",refresh);
-el("trainForm").addEventListener("submit",async event=>{event.preventDefault();const button=el("startTraining");button.disabled=true;el("runSelect").value="";el("trainMessage").textContent="Starting the Kubernetes training run…";try{const response=await fetch("/api/train",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({rounds:Number(el("roundInput").value),deadline:Number(el("deadlineInput").value)})});const result=await response.json();if(!response.ok)throw new Error(result.error||"Unable to start training");el("trainMessage").textContent=`Training started (process ${result.pid}). Live progress will appear here.`;await refresh()}catch(error){el("trainMessage").textContent=error.message;button.disabled=false}});
-if(location.hash==="#results")setTab("results");refresh();
+let busy=false,refreshQueued=false,selectionVersion=0;async function refresh(){if(busy){refreshQueued=true;return}busy=true;const version=selectionVersion;try{const q=el("runSelect").value;const r=await fetch("/api/dashboard"+(q?"?run="+encodeURIComponent(q):""),{cache:"no-store"});const d=await r.json();if(!r.ok)throw new Error(d.error||"Dashboard refresh failed");if(version===selectionVersion)render(d)}catch(e){if(version===selectionVersion)el("updated").textContent="Dashboard update failed: "+e.message}finally{busy=false;if(refreshQueued){refreshQueued=false;refresh()}}}
+document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>setTab(b.dataset.tab)));el("runSelect").addEventListener("change",()=>{selectionVersion++;refresh()});
+el("trainForm").addEventListener("submit",async event=>{event.preventDefault();const button=el("startTraining");button.disabled=true;selectionVersion++;el("runSelect").value="";render({...window.lastData,active:true,runs:[],run:{run_id:null,summary:{},evaluation:{},rounds:[],events:[],config:{},latest_attempt:0}});el("trainMessage").textContent="Starting the Kubernetes training run…";try{const response=await fetch("/api/train",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({rounds:Number(el("roundInput").value),deadline:Number(el("deadlineInput").value)})});const result=await response.json();if(!response.ok)throw new Error(result.error||"Unable to start training");el("trainMessage").textContent=`Training started (process ${result.pid}). Live progress will appear here.`;await refresh()}catch(error){el("trainMessage").textContent=error.message;button.disabled=false;await refresh()}});
+el("faultForm").addEventListener("submit",async event=>{event.preventDefault();const button=el("simulateFailure");button.disabled=true;el("faultMessage").textContent="Injecting the failure and waiting for Kubernetes to recreate the pod…";try{const response=await fetch("/api/fail",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({bank:el("faultBank").value})});const result=await response.json();if(!response.ok)throw new Error(result.error||"Unable to simulate the failure");el("faultMessage").textContent=result.record.recovery_censored?"Replacement was not observed before the timeout. Check the pod status and event stream.":`${result.bank} recovered and became Ready in ${fmt(result.record.fault_to_ready_seconds,1)} seconds.`;await refresh()}catch(error){el("faultMessage").textContent=error.message;button.disabled=false;await refresh()}});
+if(location.hash==="#results")setTab("results");refresh();setInterval(refresh,5000);
 </script></body></html>"""
 
 
@@ -547,19 +556,38 @@ def _alerts(kubernetes, run, prepared):
     return alerts[:30]
 
 
+def simulate_self_healing(bank):
+    if bank not in {"bank-1", "bank-2", "bank-3"}:
+        raise ValueError("bank must be bank-1, bank-2, or bank-3")
+    if not demo.active():
+        raise RuntimeError("Start a training run before simulating self-healing.")
+    try:
+        demo.fail(bank)
+    except FileExistsError as exc:
+        raise RuntimeError("Only one bank failure simulation is allowed per training run.") from exc
+    latest = _read_json(demo.ROOT / "latest.json") or {}
+    output = latest.get("output")
+    record = _read_json(Path(output) / "fault.json") if isinstance(output, str) else None
+    if record is None:
+        raise RuntimeError("Failure simulation finished without writing a recovery record.")
+    return {"bank": bank, "record": record}
+
+
 def dashboard_data(selected_run=None):
     settings = _read_json(demo.ROOT / "settings.json")
     prepared = settings is not None
     active = False
+    demo_active = False
     active_error = None
     try:
-        active = _training_active()
+        demo_active = demo.active()
+        active = demo_active or _dashboard_process_active()
     except (psutil.AccessDenied, OSError, KeyError, TypeError) as exc:
         active_error = str(exc)
     run_paths, latest = _run_ids()
-    active_id = latest.get("run_id") if active else None
+    active_id = latest.get("run_id") if demo_active else None
     remote_files = {}
-    if active and not active_id:
+    if demo_active and not active_id:
         remote = _read_remote_run(latest)
         active_id = remote.get("run_id") if remote else None
         if remote:
@@ -570,7 +598,7 @@ def dashboard_data(selected_run=None):
                 run_paths.setdefault(active_id, Path(latest.get("output", RESULTS)) / active_id)
             else:
                 active_id = None
-    elif active and latest.get("pod"):
+    elif demo_active and latest.get("pod"):
         remote = _read_remote_run(latest)
         if remote:
             remote_files = remote.get("files", {})
@@ -666,12 +694,22 @@ def dashboard_data(selected_run=None):
         "generated_at": datetime.now(UTC).isoformat(),
         "prepared": prepared,
         "active": active,
+        "fault": {**_fault_status(latest), "available": demo_active and kubernetes.get("available", False)},
         "training_log": _read_training_log(),
         "runs": runs,
         "run": run,
         "kubernetes": kubernetes,
         "alerts": alerts,
     }
+
+
+def _fault_status(latest):
+    output = latest.get("output")
+    if not isinstance(output, str):
+        return {"requested": False, "record": None}
+    directory = Path(output)
+    record = _read_json(directory / "fault.json")
+    return {"requested": (directory / "fault-requested").exists(), "record": record}
 
 
 def _read_training_log():
@@ -730,11 +768,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def do_POST(self):
-        if urlsplit(self.path).path != "/api/train":
+        endpoint = urlsplit(self.path).path
+        if endpoint not in {"/api/train", "/api/fail"}:
             self.send_error(404)
             return
         if not _valid_dashboard_origin(self):
-            self.send_error(403, "Dashboard training requests must come from this local dashboard.")
+            self.send_error(403, "Dashboard actions must come from this local dashboard.")
             return
         if self.headers.get_content_type() != "application/json":
             self.send_error(415, "Expected application/json.")
@@ -746,26 +785,36 @@ class DashboardHandler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(length))
             if not isinstance(body, dict):
                 raise ValueError("Expected a JSON object.")
-            rounds = body.get("rounds")
-            deadline = body.get("deadline")
-            if (
-                type(rounds) is not int
-                or isinstance(deadline, bool)
-                or not isinstance(deadline, (int, float))
-            ):
-                raise ValueError("Rounds must be an integer and deadline must be a number.")
-            result = launch_training(rounds, deadline)
+            if endpoint == "/api/train":
+                rounds = body.get("rounds")
+                deadline = body.get("deadline")
+                if (
+                    type(rounds) is not int
+                    or isinstance(deadline, bool)
+                    or not isinstance(deadline, (int, float))
+                ):
+                    raise ValueError("Rounds must be an integer and deadline must be a number.")
+                result = launch_training(rounds, deadline)
+                status = 202
+            else:
+                result = simulate_self_healing(body.get("bank"))
+                status = 200
             payload = json.dumps(result).encode("utf-8")
-            status = 202
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             payload = json.dumps({"error": str(exc)}).encode("utf-8")
             status = 400
+        except FileExistsError as exc:
+            payload = json.dumps({"error": str(exc)}).encode("utf-8")
+            status = 409
         except OSError as exc:
-            payload = json.dumps({"error": f"Unable to start training: {exc}"}).encode("utf-8")
+            payload = json.dumps({"error": f"Dashboard action failed: {exc}"}).encode("utf-8")
             status = 500
         except RuntimeError as exc:
             payload = json.dumps({"error": str(exc)}).encode("utf-8")
             status = 409
+        except subprocess.SubprocessError as exc:
+            payload = json.dumps({"error": f"Failure simulation failed: {exc}"}).encode("utf-8")
+            status = 500
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store")

@@ -35,12 +35,17 @@ between demonstrations. Re-run `uv run bank-fl demo setup` after changing
 1. Run `uv run bank-fl demo status` and explain the coordinator and three banks.
 2. Run `uv run bank-fl demo dashboard` in another terminal and open
    `http://127.0.0.1:8765`. In **Live monitor**, select the round count and deadline,
-   then click **Start training**. The dashboard shows pod readiness/restarts,
+   then click **Start training**. The dashboard polls in the background every five
+   seconds; starting a run clears the previously displayed results, and the new run
+   appears automatically. The dashboard shows pod readiness/restarts,
    deployments, services, recent Kubernetes events, logs, training attempts, and
    alerts. Kubernetes event timestamps are converted to Singapore Time (SGT),
    including the date. It binds to loopback.
-3. Explain a successful commit in **Live monitor**. After several commits, run
-   `uv run bank-fl demo fail` in another terminal.
+3. Explain a successful commit in **Live monitor**. After several commits, choose a
+   bank in the dashboard's **Simulate self-healing** card and click **Delete bank
+   pod**. The card tracks the deleted pod name/UID and the replacement pod name/UID
+   until it becomes Ready. Alternatively, run
+   `uv run bank-fl demo fail --bank bank-3` in another terminal.
 4. Identify commits containing the other two banks while the failed bank recovers.
 5. Identify a later commit containing the returned bank. Explain that pod readiness
    and useful training participation are distinct measurements.
