@@ -71,6 +71,12 @@ def main(argv=None):
     plots = commands.add_parser("plot", help="plot and tabulate one or more evaluated runs")
     plots.add_argument("directories", nargs="+", type=Path)
     plots.add_argument("--output", type=Path, default=Path("results/figures"))
+    prediction = commands.add_parser("predict", help="score one held-out test payment")
+    prediction.add_argument("directory", type=Path)
+    prediction.add_argument("--data", type=Path, default=Path("data/ulb"))
+    kind = prediction.add_mutually_exclusive_group()
+    kind.add_argument("--fraud", action="store_const", const="fraud", dest="kind")
+    kind.add_argument("--normal", action="store_const", const="normal", dest="kind")
     args = parser.parse_args(argv)
     try:
         if args.command == "demo":
@@ -104,6 +110,19 @@ def main(argv=None):
             from experiments.plot import plot_runs
 
             print(plot_runs(args.directories, args.output).resolve())
+        elif args.command == "predict":
+            from experiments.predict import predict_one
+
+            result = predict_one(args.directory, args.data, args.kind)
+            guess = "FRAUD" if result["predicted_fraud"] else "NORMAL"
+            truth = "FRAUD" if result["actual_fraud"] else "NORMAL"
+            verdict = "correct" if guess == truth else "wrong"
+            print(f"Test payment #{result['payment']}   Amount: {result['amount']:.2f}")
+            print(
+                f"Model says:  {guess}  (score {result['score']:.3f}, "
+                f"cut-off {result['threshold']:.3f}, {result['model']})"
+            )
+            print(f"Real answer: {truth}  -> {verdict}")
         else:
             config = config_from_args(args)
             if args.command == "flower":
