@@ -4,6 +4,8 @@ from types import SimpleNamespace
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+import pytest
+
 from app import dashboard, demo
 
 
@@ -152,6 +154,14 @@ def test_dashboard_http_serves_page_and_json_api(monkeypatch):
         with urlopen(f"{base}/api/dashboard?run=run-1") as response:
             api = json.loads(response.read())
         assert "Operations dashboard" in page
+        assert "setInterval(refresh,5000)" in page
+        assert 'id="refresh"' not in page
+        assert "events.slice(-80).map(formatEvent)" in page
+        assert "Simulate self-healing" in page
+        assert 'fetch("/api/fail"' in page
+        assert 'id="faultTracker"' in page
+        assert "Deleted pod:" in page
+        assert "Replacement pod:" in page
         assert api == {"selected": "run-1", "alerts": []}
     finally:
         server.shutdown()
@@ -196,7 +206,53 @@ def test_dashboard_reads_live_training_files_from_coordinator(tmp_path, monkeypa
     assert result["run"]["run_id"] == "run-live"
     assert result["run"]["latest_attempt"] == 1
     assert result["run"]["rounds"][0]["version"] == 1
+    assert result["run"]["events"][0]["event"] == "committed"
     assert sum(call[0] == "exec" for call in calls) == 1
+
+
+def test_dashboard_does_not_show_previous_run_during_dashboard_startup(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    demo.ROOT.mkdir()
+    demo.save("settings.json", {"synthetic": False})
+    demo.save(
+        "latest.json",
+        {"pod": "coordinator-abc", "output": "results/demo/old", "run_id": "run-old"},
+    )
+    old_run = tmp_path / "results" / "demo" / "20261025-120000" / "run-old"
+    old_run.mkdir(parents=True)
+    (old_run / "run.json").write_text(json.dumps({"config": {"rounds": 3}}), encoding="utf-8")
+    monkeypatch.setattr(demo, "active", lambda: False)
+    monkeypatch.setattr(dashboard, "_dashboard_process_active", lambda: True)
+    monkeypatch.setattr(
+        dashboard,
+        "_kubectl",
+        lambda *args: json.dumps({"items": []}) if args[0] == "get" else "",
+    )
+
+    result = dashboard.dashboard_data()
+
+    assert result["active"]
+    assert result["run"]["run_id"] is None
+
+
+def test_simulate_self_healing_injects_one_selected_bank_failure(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    demo.ROOT.mkdir()
+    output = tmp_path / "results" / "demo" / "current"
+    output.mkdir(parents=True)
+    demo.save("latest.json", {"output": str(output)})
+    record = {"bank": "bank-2", "fault_to_ready_seconds": 3.5, "recovery_censored": False}
+    monkeypatch.setattr(demo, "active", lambda: True)
+
+    def fail(bank):
+        assert bank == "bank-2"
+        (output / "fault.json").write_text(json.dumps(record), encoding="utf-8")
+
+    monkeypatch.setattr(demo, "fail", fail)
+
+    assert dashboard.simulate_self_healing("bank-2") == {"bank": "bank-2", "record": record}
+    with pytest.raises(ValueError, match="bank-1, bank-2, or bank-3"):
+        dashboard.simulate_self_healing("coordinator")
 
 
 def test_launch_training_runs_demo_command_in_background(tmp_path, monkeypatch):
@@ -275,6 +331,42 @@ def test_dashboard_training_endpoint_validates_origin_and_launches(monkeypatch):
         else:
             raise AssertionError("Cross-origin training request should be rejected.")
         assert calls == [(5, 40)]
+    finally:
+        server.shutdown()
+        thread.join()
+        server.server_close()
+
+
+def test_dashboard_failure_endpoint_accepts_local_simulation(monkeypatch):
+    calls = []
+    expected = {
+        "bank": "bank-3",
+        "record": {
+            "bank": "bank-3",
+            "fault_to_ready_seconds": 2.0,
+            "recovery_censored": False,
+        },
+    }
+    monkeypatch.setattr(
+        dashboard,
+        "simulate_self_healing",
+        lambda bank: calls.append(bank) or expected,
+    )
+    server = dashboard.ThreadingHTTPServer(("127.0.0.1", 0), dashboard.DashboardHandler)
+    thread = threading.Thread(target=server.serve_forever)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    request = Request(
+        f"{base}/api/fail",
+        data=json.dumps({"bank": "bank-3"}).encode(),
+        headers={"Content-Type": "application/json", "Origin": base},
+        method="POST",
+    )
+    try:
+        with urlopen(request) as response:
+            assert response.status == 200
+            assert json.loads(response.read()) == expected
+        assert calls == ["bank-3"]
     finally:
         server.shutdown()
         thread.join()
