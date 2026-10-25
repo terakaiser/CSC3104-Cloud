@@ -1,95 +1,94 @@
 # Resilient Bank Federation
+Three simulated banks train one shared fraud-detection model **without sharing
+their data**. Each bank runs in its own Kubernetes pod. If one bank fails,
+training continues with the other two, and Kubernetes restarts the failed bank
+so it can rejoin.
 
-Three simulated banks train a shared fraud-detection model without sharing their
-raw training records. Training can continue with two banks when one fails, and a
-recovered bank can rejoin. Built with PyTorch, Flower, Docker, and Kubernetes.
+Built with Python, PyTorch, Flower (federated learning), Docker and Kubernetes.
 
-## Prepare once
+## 1. Install the tools (once)
+You need four tools. Install them with one command, then restart machine.
 
-Install **uv**, **Docker Desktop with Linux containers**, **kubectl**, and **kind**.
-
-```text
-winget install --exact --id astral-sh.uv
-winget install --exact --id Docker.DockerDesktop
-winget install --exact --id Kubernetes.kubectl
-winget install --exact --id Kubernetes.kind
+**Windows** (PowerShell):
+```powershell
+"astral-sh.uv", "Docker.DockerDesktop", "Kubernetes.kubectl", "Kubernetes.kind" | ForEach-Object { winget install --exact --id $_ }
 ```
+**Mac** (Terminal, needs [Homebrew](https://brew.sh)):
+```bash
+brew install uv kubernetes-cli kind && brew install --cask docker-desktop
+```
+| Tool | What it is for |
+| uv | Installs the right Python (3.12) and all Python packages for this project |
+| Docker Desktop | Builds and runs containers. Give it at least 4 CPUs and 6 GB memory (Settings → Resources) |
+| kubectl | Talks to Kubernetes |
+| kind | Runs a small Kubernetes cluster inside Docker on your laptop |
 
-Start Docker and run these commands from the repository root:
-
-```text
+## 2. Set up the project (once)
+From the repository folder:
+```powershell
 uv sync --frozen --extra dev --python 3.12
+```
+This creates a `.venv` folder with Python 3.12 and the exact package versions
+from `uv.lock`.
+
+## 3. Run it
+Start Docker Desktop first. Then run setup:
+```powershell
 uv run bank-fl demo setup
 ```
+Setup downloads the public Kaggle credit-card fraud dataset into `data\raw`,
+splits it into three banks under `data\ulb`, builds the Docker image and creates
+the Kubernetes cluster. If the download is blocked, download `creditcard.csv`
+from the [Kaggle dataset page](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud),
+put it in `data\raw`, and run setup again.
 
-Setup downloads and verifies the ULB credit-card dataset from Kaggle, prepares
-three bank partitions, builds the image, and starts a dedicated local Kubernetes
-cluster. The first setup takes several minutes. Your default Kubernetes context
-is unchanged. Allow Docker enough resources for four pods (each limited to 1 CPU
-and 1 GiB memory), plus Kubernetes overhead.
-
-If Kaggle requires login, download `creditcard.csv` from the
-[dataset page](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud), place it in
-`data/raw`, and rerun setup. Follow the dataset's published terms.
-
-## Present the demo
-
-**Terminal 1 — start training:**
-
-```text
+**Terminal 1** starts training:
+```powershell
 uv run bank-fl demo start
 ```
-
-**Terminal 2 — after a few rounds commit, terminate one bank pod:**
-
-```text
+**Terminal 2**, after a few rounds, kills bank 3's pod:
+```powershell
 uv run bank-fl demo fail
 ```
+What happens: **bank fails → training continues → bank rejoins.**
 
-Show that rounds continue with the remaining banks. Kubernetes replaces the failed
-pod; watch for the returning bank in a later committed round. The start command
-exports results, evaluates the model, and creates charts automatically.
-
-Explain: **local data → shared model → bank failure → continued training → rejoin**.
-A ready replacement pod alone does not prove rejoin; show its accepted update.
-
-Useful extras:
-
-```text
+Other demo commands:
+```powershell
 uv run bank-fl demo status              # show the four pods
-uv run bank-fl demo start --rounds 50   # allow more time to demonstrate recovery
-uv run bank-fl demo results             # retry result export/evaluation
+uv run bank-fl demo start --rounds 50   # longer run, more time to see the rejoin
+uv run bank-fl demo results             # retry exporting results if it failed
 ```
 
-Results are saved under `results/demo`. Charts describe that run; they do not by
-themselves prove a speedup over another training mode.
-
-## Train without Kubernetes
-
-```text
-uv run bank-fl setup-data
-uv run bank-fl flower --data data/ulb --rounds 5
-uv run bank-fl evaluate <run-directory> --data data/ulb
-uv run bank-fl plot <run-directory>
+After training, let the model check a payment it has never seen:
+```powershell
+uv run bank-fl predict <results-folder> --fraud    # a real fraud payment
+uv run bank-fl predict <results-folder> --normal   # a normal payment
 ```
 
-Use the run directory printed by training. `flower` uses separate local processes;
-`run` is a threaded development harness. Always pass `--data data/ulb` for real data.
+## 4. Results
+Each demo run creates a folder under `results\demo`:
 
-## Development
+| File | What it shows |
+| `figures\comparison.png` | Round times and fraud-detection quality over time |
+| `figures\systems.png` | Training time, successful rounds, data transferred, memory |
+| `summary.json` | Rounds completed, how often each bank took part, rejected updates |
+| `evaluation.json` | Precision, recall, F1, PR-AUC, ROC-AUC, false-positive rate |
+| `recovery.json` | Seconds until the failed bank contributed again (demo only) |
+| `rounds.csv`, `events.jsonl` | Raw per-round logs |
+| `model-000.npz`, `model-001.npz`, ... | The saved global model after each round |
 
-```text
-uv run pytest
-uv run ruff check app experiments k8s tests
-uv run ruff format --check app experiments k8s tests
+## 5. After you change the code
+- **Tests:** nothing to do. `uv run` always uses your latest code.
+- **Kubernetes demo:** run `uv run bank-fl demo setup` again. It rebuilds
+  the image (a few seconds when only code changed) and restarts the pods.
+  Do not run it while a demo is training.
+- **Added a Python package to `pyproject.toml`:** run
+  `uv sync --extra dev --python 3.12` first, then `demo setup`.
+
+## 6. Stop or clean up
+You can leave the cluster in place between work sessions. Quit Docker Desktop to
+free memory, and the cluster starts again with Docker.
+To remove the cluster completely (your `data` and `results` folders are kept):
+```powershell
+kind delete cluster --name bank-fl-demo
 ```
-
-- [Demo guide](docs/demo.md): prerequisites, presentation, troubleshooting, cleanup.
-- [Design](docs/design.md): model, coordination, recovery, and limitations.
-- [Testing](docs/testing.md): correctness checks and repeated experiments.
-- [Deployment](docs/deployment.md): manual Docker/Kubernetes commands.
-- `uv run bank-fl --help`: all commands; add `--help` to any subcommand.
-
-This is a research prototype with simulated banks. Early quorum can favour faster
-banks. It does not provide coordinator failover, secure aggregation, or differential
-privacy. Compare model quality and bank participation alongside training time.
