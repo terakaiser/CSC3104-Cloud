@@ -42,12 +42,43 @@ the Kubernetes cluster. If the download is blocked, download `creditcard.csv`
 from the [Kaggle dataset page](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud),
 put it in `data\raw`, and run setup again.
 
+<<<<<<< Updated upstream
 **Terminal 1** starts training:
 ```powershell
 uv run bank-fl demo start
 ```
 **Terminal 2**, after a few rounds, kills bank 3's pod:
 ```powershell
+=======
+Setup downloads and verifies the ULB credit-card dataset from Kaggle, prepares
+three bank partitions, builds the image, and starts a dedicated local Kubernetes
+cluster. The first setup takes several minutes. Your default Kubernetes context
+is unchanged. Allow Docker enough resources for four pods (each limited to 1 CPU
+and 1 GiB memory), plus Kubernetes overhead.
+
+If Kaggle requires login, download `creditcard.csv` from the
+[dataset page](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud), place it in
+`data/raw`, and rerun setup. Follow the dataset's published terms.
+
+## Present the demo
+
+**Terminal 1 — open the dashboard and start training there:**
+
+```text
+uv run bank-fl demo dashboard
+```
+
+Open <http://127.0.0.1:8765>. In **Live monitor**, choose the round count and
+deadline, then click **Start training**. Use **Results** to inspect the selected
+run's exported evaluation after training finishes. The dashboard also shows pod
+health, deployments, Kubernetes events, logs, and alerts, refreshing automatically.
+Keep the dashboard command running. Alternatively, start training from a separate
+terminal with `uv run bank-fl demo start`.
+
+**Terminal 2 — after a few rounds commit, terminate one bank pod:**
+
+```text
+>>>>>>> Stashed changes
 uv run bank-fl demo fail
 ```
 What happens: **bank fails → training continues → bank rejoins.**

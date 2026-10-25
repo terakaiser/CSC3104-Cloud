@@ -27,17 +27,27 @@ The demo owns the `bank-fl-demo` kind cluster and stores its kubeconfig and stat
 under `.demo`. It does not change your default Kubernetes context. It uses loopback
 port 19093 for control; the start command manages port forwarding automatically.
 Rerunning setup refreshes the image and restarts the demo workloads, so do it only
-between demonstrations.
+between demonstrations. Re-run `uv run bank-fl demo setup` after changing
+`k8s/deployment.yaml` to apply those deployment and probe changes to the kind cluster.
 
 ## Presentation sequence
 
 1. Run `uv run bank-fl demo status` and explain the coordinator and three banks.
-2. Run `uv run bank-fl demo start` in terminal 1. Explain a successful commit.
-3. After several commits, run `uv run bank-fl demo fail` in terminal 2.
+2. Run `uv run bank-fl demo dashboard` in another terminal and open
+   `http://127.0.0.1:8765`. In **Live monitor**, select the round count and deadline,
+   then click **Start training**. The dashboard shows pod readiness/restarts,
+   deployments, services, recent Kubernetes events, logs, training attempts, and
+   alerts. Kubernetes event timestamps are converted to Singapore Time (SGT),
+   including the date. It binds to loopback.
+3. Explain a successful commit in **Live monitor**. After several commits, run
+   `uv run bank-fl demo fail` in another terminal.
 4. Identify commits containing the other two banks while the failed bank recovers.
 5. Identify a later commit containing the returned bank. Explain that pod readiness
    and useful training participation are distinct measurements.
-6. Let training finish. Show the exported summary, recovery record, and charts.
+6. Let training finish and open **Results**. Select the run to inspect its exported
+   summary and test evaluation metrics. Results are populated from that run's saved
+   `summary.json` and `evaluation.json`; while training is active, they are not
+   presented as final metrics.
 
 Use `demo start --rounds 50` if the rehearsal ends before you can trigger a fault
 or see the bank rejoin. `--deadline` controls the attempt deadline in seconds and
@@ -83,6 +93,7 @@ Kubernetes measurements as equivalent repeats.
 | No accepted update after replacement | Repeat with more rounds; check the event log |
 | Training misses healthy deadlines | Rehearse with a larger --deadline and check Docker resources |
 | Failed submission/export | Inspect .demo/session.log and .demo/forward.log; retry demo results |
+| Dashboard cannot connect | Confirm setup completed; keep the dashboard on `127.0.0.1` and inspect its Kubernetes-unavailable alert |
 
 ```text
 kubectl --kubeconfig .demo/kubeconfig --context kind-bank-fl-demo -n bank-fl get pods
