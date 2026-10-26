@@ -26,12 +26,33 @@ def inject(bank: str, kind: str, duration: float, timeout: float, output: Path):
     pods = json.loads(kubectl("get", "pods", "-l", f"app={bank}", "-o", "json"))["items"]
     if len(pods) != 1:
         raise ValueError("expected one bank pod")
+    original_name = pods[0]["metadata"]["name"]
     original_uid = pods[0]["metadata"]["uid"]
     started = time.monotonic()
-    record = {"bank": bank, "kind": kind, "unix_time": time.time(), "duration": duration}
+    record = {
+        "bank": bank,
+        "kind": kind,
+        "unix_time": time.time(),
+        "duration": duration,
+        "status": "starting",
+        "deleted_pod": original_name,
+        "deleted_uid": original_uid,
+        "replacement_pod": None,
+        "replacement_uid": None,
+        "fault_to_ready_seconds": None,
+    }
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    def save_record():
+        temporary = output.with_suffix(output.suffix + ".tmp")
+        write_json(temporary, record)
+        temporary.replace(output)
+
     try:
+        record["status"] = "deleting"
+        save_record()
         if kind == "kill":
-            kubectl("delete", "pod", pods[0]["metadata"]["name"], "--wait=false")
+            kubectl("delete", "pod", original_name, "--wait=false")
         else:
             kubectl("scale", "deployment", bank, "--replicas=0")
             try:
@@ -39,26 +60,44 @@ def inject(bank: str, kind: str, duration: float, timeout: float, output: Path):
             finally:
                 kubectl("scale", "deployment", bank, f"--replicas={original_replicas}")
         record["fault_to_ready_seconds"] = None
+        record["status"] = "waiting_for_replacement"
+        save_record()
         until = time.monotonic() + timeout
         while time.monotonic() < until:
             replacements = json.loads(kubectl("get", "pods", "-l", f"app={bank}", "-o", "json"))[
                 "items"
             ]
-            if any(
-                p["metadata"]["uid"] != original_uid
-                and any(
-                    c["type"] == "Ready" and c["status"] == "True"
-                    for c in p.get("status", {}).get("conditions", [])
+            replacement = next(
+                (pod for pod in replacements if pod["metadata"]["uid"] != original_uid), None
+            )
+            if replacement:
+                metadata = replacement["metadata"]
+                record["replacement_pod"] = metadata["name"]
+                record["replacement_uid"] = metadata["uid"]
+                conditions = replacement.get("status", {}).get("conditions", [])
+                ready = any(
+                    condition["type"] == "Ready" and condition["status"] == "True"
+                    for condition in conditions
                 )
-                for p in replacements
-            ):
-                record["fault_to_ready_seconds"] = time.monotonic() - started
-                break
+                record["status"] = "ready" if ready else replacement.get("status", {}).get(
+                    "phase", "starting"
+                ).lower()
+                if ready:
+                    record["fault_to_ready_seconds"] = time.monotonic() - started
+                    save_record()
+                    break
+            save_record()
             time.sleep(0.5)
         record["recovery_censored"] = record["fault_to_ready_seconds"] is None
-    finally:
-        output.parent.mkdir(parents=True, exist_ok=True)
-        write_json(output, record)
+        if record["recovery_censored"]:
+            record["status"] = "timed_out"
+        save_record()
+    except BaseException as exc:
+        record["status"] = "failed"
+        record["error"] = str(exc)
+        record["recovery_censored"] = True
+        save_record()
+        raise
     return record
 
 
