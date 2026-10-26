@@ -9,7 +9,6 @@ import re
 import subprocess
 import sys
 import threading
-import time
 import webbrowser
 from datetime import UTC, datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -28,91 +27,101 @@ SINGAPORE_TIME = timezone(timedelta(hours=8), "SGT")
 TRAINING_STATE = demo.ROOT / "dashboard-training.json"
 TRAINING_LOG = demo.ROOT / "dashboard-training.log"
 TRAINING_LOCK = threading.Lock()
-FAULT_LOG = demo.ROOT / "dashboard-fault.log"
-FAULT_STATE = demo.ROOT / "dashboard-fault.json"
-FAULT_LOCK = threading.Lock()
-BANKS = ("bank-1", "bank-2", "bank-3")
-_fault_process = None
 
 PAGE = r"""<!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#0a0a0a">
 <title>Bank Federation | Operations Dashboard</title>
 <style>
-:root{color-scheme:dark;--bg:#0b1220;--panel:#121d2e;--line:#26364c;--muted:#91a3ba;--text:#e8eef7;--cyan:#62d6d0;--green:#4bd49a;--amber:#ffcb72;--red:#ff7b82}
-*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top,#15263b 0,var(--bg) 50%);color:var(--text);font:14px/1.45 "Segoe UI",system-ui,sans-serif}
-main{max-width:1500px;margin:auto;padding:28px}header{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:22px}
-h1{font-size:24px;margin:0;letter-spacing:.2px}.eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:1.4px;color:var(--cyan);font-weight:700}
-.subtle,.muted{color:var(--muted)}button,select{background:#17263a;border:1px solid var(--line);color:var(--text);border-radius:7px;padding:9px 12px}
-.grid{display:grid;gap:14px}.stats{grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:14px}.cols{grid-template-columns:1.15fr .85fr}.thirds{grid-template-columns:1fr 1fr 1fr}
-.card{background:linear-gradient(145deg,rgba(20,32,49,.97),rgba(16,27,42,.97));border:1px solid var(--line);border-radius:11px;padding:16px;min-width:0;box-shadow:0 10px 30px #0002}
-.card h2{font-size:14px;margin:0 0 13px;display:flex;justify-content:space-between;align-items:center}.value{font-size:26px;font-weight:700;margin-top:6px}.label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)}
-.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--muted);margin-right:7px}.ok{color:var(--green)}.ok .dot{background:var(--green)}.warn{color:var(--amber)}.warn .dot{background:var(--amber)}.bad{color:var(--red)}.bad .dot{background:var(--red)}.info{color:var(--cyan)}
-.scroll{overflow:auto;max-height:360px}table{width:100%;border-collapse:collapse;font-size:12px}th{text-align:left;color:var(--muted);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.8px}
-td,th{padding:9px 8px;border-bottom:1px solid #26364c;vertical-align:top}td code{font-size:11px;color:#cbd9eb}.alerts{display:grid;gap:8px}.alert{padding:9px 11px;border-left:3px solid var(--cyan);background:#18283b;border-radius:4px}.alert.warning{border-color:var(--amber)}.alert.critical{border-color:var(--red)}
-.logs{height:285px;overflow:auto;background:#080e18;border:1px solid #26364c;border-radius:7px;padding:10px;font:11px/1.55 Consolas,"Cascadia Code",monospace;white-space:pre-wrap;word-break:break-word;color:#c8d6e8}
-.wide{grid-column:1/-1}.charts{grid-template-columns:1fr 1fr}.chart{width:100%;height:210px}.metric{font-size:22px;font-weight:700}.metric small{display:block;font-size:10px;color:var(--muted);font-weight:400;text-transform:uppercase;letter-spacing:.8px}
-.pill{border:1px solid var(--line);border-radius:99px;padding:3px 8px;font-size:10px;color:var(--muted)}.blank{padding:24px;text-align:center;color:var(--muted)}
-.tabs{display:flex;gap:8px;border-bottom:1px solid var(--line);margin:0 0 16px}.tab{background:transparent;border:0;border-bottom:2px solid transparent;border-radius:0;color:var(--muted);padding:11px 16px;cursor:pointer}.tab.active{border-color:var(--cyan);color:var(--text)}.tab-panel[hidden]{display:none}
-<<<<<<< Updated upstream
-.controls{display:flex;align-items:end;gap:12px;flex-wrap:wrap}.controls label{display:grid;gap:5px;color:var(--muted);font-size:11px}.controls input{width:120px;background:#0b1422;border:1px solid var(--line);border-radius:6px;color:var(--text);padding:9px}.primary{background:#145e63;border-color:#237d81;color:#efffff;font-weight:700;cursor:pointer}.primary:disabled{opacity:.5;cursor:not-allowed}.runSelect{min-width:260px}.notice{margin-top:10px;color:var(--muted);min-height:20px}.result-status{font-size:20px;font-weight:700}
-@media(max-width:950px){.cols,.thirds,.charts{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}main{padding:16px}header{align-items:flex-start}}
-=======
-.controls{display:flex;align-items:end;gap:12px;flex-wrap:wrap}.controls label{display:grid;gap:5px;color:var(--muted);font-size:11px}.controls input{width:120px;background:#0b1422;border:1px solid var(--line);border-radius:6px;color:var(--text);padding:9px}.primary{background:#145e63;border-color:#237d81;color:#efffff;font-weight:700;cursor:pointer}.primary:disabled{opacity:.5;cursor:not-allowed}.danger{background:#6b1f27;border-color:#a33a44}.runSelect{min-width:260px}.notice{margin-top:10px;color:var(--muted);min-height:20px}.result-status{font-size:20px;font-weight:700}
-@media(max-width:950px){.cols,.thirds,.charts{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}main{padding:16px}header{align-items:flex-start}.toolbar{flex-wrap:wrap;justify-content:flex-end}}
-.hero{margin-bottom:18px;padding:18px 22px 12px;background:radial-gradient(ellipse at 50% 55%,#152b52 0,#0e1a33 65%)}.hero-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}.hero-title{font-size:21px;font-weight:700;margin:2px 0 0}.legend{display:flex;gap:14px;flex-wrap:wrap;color:var(--muted);font-size:12px;padding-top:4px}.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:-1px}.hero-note{color:var(--muted);font-size:12px;text-align:center;margin-top:4px}
-#hx{width:100%;height:auto;display:block;max-height:470px;--c:#7d8fa8}.s-idle{--c:#7d8fa8}.s-training{--c:var(--green)}.s-sent{--c:var(--cyan)}.s-waiting{--c:var(--amber)}.s-down{--c:var(--red)}
-.hxbox{fill:#0c1830;stroke:var(--c);stroke-width:3;transition:stroke .4s}.s-down .hxbox{animation:hxBlink 1.1s ease-in-out infinite}.db .dbbody{fill:var(--c);opacity:.8}.db .dbtop{fill:var(--c)}.db .dbshine{fill:#fff;opacity:.3}
-.hxflow{stroke:var(--c);stroke-width:2.5;fill:none;stroke-dasharray:6 6}.s-training .hxflow{animation:hxDash .8s linear infinite}.hxhead{stroke:var(--c);stroke-width:2.5;fill:none;stroke-linecap:round;stroke-linejoin:round}.hxmini{color:var(--c);opacity:.8;--bar:#0c1830}
-.hxicon .bg{fill:var(--c);fill-opacity:.16;stroke:var(--c);stroke-width:2}.hxi{display:none;stroke:var(--c);stroke-width:3;fill:none;stroke-linecap:round;stroke-linejoin:round}.i-idle{fill:var(--c);stroke:none}
-.s-training .i-training,.s-sent .i-sent,.s-waiting .i-waiting,.s-down .i-down,.s-idle .i-idle{display:inline}.i-training{animation:hxSpin 1.3s linear infinite;transform-box:fill-box;transform-origin:center}
-.hxname{fill:var(--text);font-weight:700;font-size:15px;letter-spacing:.08em}.hxstate{fill:var(--c);font-size:15px;font-weight:600}.hxcount{fill:var(--muted);font-size:13px}
-.hxlink{fill:none;stroke:var(--c);stroke-width:3;opacity:.35;transition:stroke .4s}.hxlink.s-training{stroke-dasharray:8 10;animation:hxDash 1s linear infinite;opacity:.75}.hxlink.s-down{stroke-dasharray:3 9;opacity:.6}
-.hxbar{fill:var(--bar,#fff)}#hxCore{color:#5d6f96;transition:color .4s}.core-live #hxCore{color:#7f97cf}.core-down #hxCore{color:var(--red)}#hxHalo{fill:none;stroke:var(--c);stroke-width:2;opacity:.35}.core-live{--c:var(--green)}.core-down{--c:var(--red)}.core-live #hxHalo{animation:hxBreathe 2.4s ease-in-out infinite}
-#hxRing{fill:none;stroke:var(--cyan);stroke-width:3;opacity:0}#hxRing.pulse{animation:hxPulse 1s ease-out}.hxver{fill:var(--text);font-size:46px;font-weight:800;text-anchor:middle}.hxcap{fill:var(--muted);font-size:13px;text-anchor:middle;letter-spacing:.12em}.hxsub{fill:var(--muted);font-size:14px;text-anchor:middle}
-.hxtag{fill:var(--red);font-size:15px;font-weight:700;text-anchor:middle;animation:hxRise 1.8s ease-out forwards}
-@keyframes hxSpin{to{transform:rotate(360deg)}}@keyframes hxDash{to{stroke-dashoffset:-36}}@keyframes hxBlink{50%{stroke-opacity:.35}}@keyframes hxBreathe{50%{opacity:.9}}@keyframes hxPulse{0%{opacity:.95;r:74px}100%{opacity:0;r:130px}}@keyframes hxRise{0%{opacity:0;transform:translateY(0)}15%{opacity:1}100%{opacity:0;transform:translateY(-30px)}}
-@media(prefers-reduced-motion:reduce){#hx *{animation:none!important}}
->>>>>>> Stashed changes
+/* shadcn/ui neutral dark tokens; colour is reserved for state and data, one emerald accent for the primary action. */
+:root{color-scheme:dark;--bg:#0a0a0a;--card:#141414;--raised:#1c1c1c;--muted-bg:#262626;--border:rgb(255 255 255/.08);--input:rgb(255 255 255/.14);--ring:#a3a3a3;--text:#fafafa;--muted:#a1a1a1;--faint:#737373;--radius:10px;
+--green:#34d399;--cyan:#38bdf8;--amber:#fbbf24;--red:#f87171;--idle:#737373}
+*{box-sizing:border-box}html{background:var(--bg)}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 "Inter","Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
+.skip{position:absolute;left:16px;top:-60px;background:var(--text);color:var(--bg);padding:8px 12px;border-radius:8px;z-index:10}.skip:focus{top:12px}
+main{max-width:1400px;margin:auto;padding:32px 24px 48px}header{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin-bottom:24px;flex-wrap:wrap}
+h1{font-size:28px;line-height:1.1;font-weight:600;letter-spacing:-.025em;margin:0;text-wrap:balance}.subline{color:var(--muted);margin-top:6px}
+.status{display:inline-flex;align-items:center;gap:8px;height:32px;padding:0 12px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--muted);font-size:13px}
+.subtle,.muted{color:var(--muted)}code{font:12px/1.5 "JetBrains Mono","Cascadia Code",Consolas,monospace;color:#d4d4d4}
+button,select,input{font:inherit;color:var(--text);touch-action:manipulation}
+button{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 14px;border:1px solid var(--input);border-radius:8px;background:transparent;font-weight:500;cursor:pointer;transition:background-color .15s,border-color .15s,color .15s,opacity .15s}
+button:hover:not(:disabled){background:var(--raised)}button:active:not(:disabled){transform:translateY(1px)}button:disabled{opacity:.45;cursor:not-allowed}
+:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+select,.controls input{height:36px;padding:0 10px;background-color:rgb(255 255 255/.04);color:var(--text);border:1px solid var(--input);border-radius:8px;transition:border-color .15s}select option{background:var(--card);color:var(--text)}select:hover,.controls input:hover{border-color:rgb(255 255 255/.24)}
+.grid{display:grid;gap:16px}.stats{grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:16px}.cols{grid-template-columns:1.15fr .85fr}.thirds{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px;min-width:0}
+.card h2{font-size:15px;font-weight:600;letter-spacing:-.01em;margin:0 0 14px;display:flex;justify-content:space-between;align-items:center;gap:12px}
+.label{font-size:13px;color:var(--muted)}.value{font-size:28px;font-weight:600;letter-spacing:-.025em;margin-top:4px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--faint);flex:none}.ok{color:var(--green)}.ok .dot{background:var(--green)}.warn{color:var(--amber)}.warn .dot{background:var(--amber)}.bad{color:var(--red)}.bad .dot{background:var(--red)}.info{color:var(--cyan)}
+.scroll{overflow:auto;max-height:360px;overscroll-behavior:contain}table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}th{text-align:left;color:var(--muted);font-weight:500;font-size:12px;position:sticky;top:0;background:var(--card)}
+td,th{padding:10px 10px;border-bottom:1px solid var(--border);vertical-align:top}td{overflow-wrap:anywhere}tbody tr{transition:background-color .15s}tbody tr:hover{background:rgb(255 255 255/.025)}
+.alerts{display:grid;gap:8px}.alert{padding:10px 12px;border:1px solid var(--border);border-left:3px solid var(--cyan);background:var(--raised);border-radius:8px}.alert b{font-weight:600}.alert div{color:var(--muted);font-size:13px;margin-top:2px;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}.alert.warning{border-left-color:var(--amber)}.alert.critical{border-left-color:var(--red)}
+.logs{height:285px;overflow:auto;overscroll-behavior:contain;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;margin:0;font:12px/1.6 "JetBrains Mono","Cascadia Code",Consolas,monospace;white-space:pre-wrap;word-break:break-word;color:#d4d4d4}
+.wide{grid-column:1/-1}.charts{grid-template-columns:1fr 1fr}.chart{width:100%;height:220px}
+.metric{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;font-size:24px;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}.metric small{display:block;font-size:13px;color:var(--muted);font-weight:400;letter-spacing:0;margin-top:4px}
+.pill{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:6px;background:var(--muted-bg);color:var(--muted);font-size:12px;font-weight:500;white-space:nowrap;font-variant-numeric:tabular-nums}.blank{padding:24px;text-align:center;color:var(--muted)}
+.tabs{display:inline-flex;gap:2px;padding:3px;background:var(--card);border:1px solid var(--border);border-radius:10px;margin:0 0 16px}.tab{height:30px;padding:0 14px;border:0;border-radius:7px;color:var(--muted)}.tab:hover:not(:disabled){background:transparent;color:var(--text)}.tab.active,.tab.active:hover{background:var(--muted-bg);color:var(--text)}.tab-panel[hidden]{display:none}
+.controls{display:flex;align-items:end;gap:12px;flex-wrap:wrap}.controls label{display:grid;gap:6px;color:var(--muted);font-size:13px}.controls input{width:140px;font-variant-numeric:tabular-nums}
+.primary{background:var(--green);border-color:transparent;color:#03140d;font-weight:600}.primary:hover:not(:disabled){background:#6ee7b7}
+.danger{background:rgb(248 113 113/.1);border-color:rgb(248 113 113/.4);color:#fca5a5}.danger:hover:not(:disabled){background:rgb(248 113 113/.18)}.danger.armed,.danger.armed:hover:not(:disabled){background:#dc2626;border-color:transparent;color:#fff}
+#clusterNote{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;font-size:13px}
+.runSelect{min-width:280px}.notice{margin-top:12px;color:var(--muted);font-size:13px;min-height:20px}.result-status{font-size:20px;font-weight:600;letter-spacing:-.01em}
+#faultTracker{margin-top:12px;font-size:13px;display:grid;gap:4px}#faultTracker b{color:var(--text);font-weight:500}
+.service{padding:8px 10px;border-bottom:1px solid var(--border)}.service b{font-weight:500}
+@media(max-width:950px){.cols,.thirds,.charts{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}main{padding:20px 16px 40px}}
+.hero{margin-bottom:16px;padding:22px 24px 24px}.hero-head h2{margin:0 0 2px;color:var(--muted);font-weight:500;font-size:14px}.hero-title{font-size:22px;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.story{color:var(--muted);margin:6px 0 22px;max-width:78ch;min-height:21px;text-wrap:pretty}
+.s-idle{--c:var(--idle)}.s-training{--c:var(--green)}.s-sent{--c:var(--cyan)}.s-waiting{--c:var(--amber)}.s-down{--c:var(--red)}
+.fed{display:grid;grid-template-columns:minmax(280px,350px) minmax(48px,1fr) minmax(250px,300px);align-items:center}
+.banks,.lanes{display:grid;grid-template-rows:repeat(3,120px);gap:14px}
+.ico{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.bank{display:grid;grid-template-rows:auto auto 1fr auto;gap:7px;padding:13px 16px;border:1px solid var(--border);border-left:3px solid var(--c);border-radius:var(--radius);background:color-mix(in srgb,var(--c) 5%,var(--raised));transition:border-color .3s,background-color .3s}
+.bank-top{display:flex;justify-content:space-between;align-items:center;gap:8px}.bank-name{display:inline-flex;align-items:center;gap:8px;font-weight:600;font-size:15px}.bank-name .ico{color:var(--muted)}
+.state{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px;border-radius:999px;font-size:12.5px;font-weight:500;color:var(--c);background:color-mix(in srgb,var(--c) 15%,transparent);white-space:nowrap}
+.st{display:none}.s-training .st-training,.s-sent .st-sent,.s-waiting .st-waiting,.s-down .st-down,.s-idle .st-idle{display:block}.st-training{animation:hxSpin .9s linear infinite}
+.bank-sub{display:flex;align-items:center;gap:6px;color:var(--faint);font-size:12.5px;min-width:0}.bank-sub span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.strip{display:flex;gap:2px;height:10px;align-self:center}.strip i{flex:1;min-width:2px;border-radius:2px;background:rgb(255 255 255/.06)}.strip i.on{background:var(--green)}.strip i.off{background:rgb(255 255 255/.2)}
+.bank-foot{display:flex;justify-content:space-between;color:var(--muted);font-size:12.5px;font-variant-numeric:tabular-nums}
+.lane{width:100%;height:120px;display:block;overflow:visible}.lane .track{fill:none;stroke:var(--c);stroke-width:2;opacity:.22}.lane .port{fill:var(--c);opacity:.6}
+.lane.s-training .track{opacity:.65;stroke-dasharray:6 8;animation:hxDash 1s linear infinite}.lane.s-sent .track{opacity:.55}.lane.s-down .track{opacity:.6;stroke-dasharray:2 7}
+.coord{--c:var(--idle);display:grid;gap:16px;justify-items:center;padding:18px 18px 20px;border:1px solid var(--border);border-radius:14px;background:var(--raised);transition:border-color .3s}
+.coord.core-live{--c:var(--green);border-color:color-mix(in srgb,var(--green) 35%,transparent)}.coord.core-down{--c:var(--red);border-color:color-mix(in srgb,var(--red) 45%,transparent)}
+.coord-head{display:flex;align-items:center;gap:8px;font-weight:600;font-size:15px}.coord-head .ico{color:var(--muted)}.coord-head small{color:var(--faint);font-weight:400;font-size:13px}
+.ringwrap{position:relative;width:150px;height:150px}.ringwrap svg{width:100%;height:100%;transform:rotate(-90deg)}.ring-bg{fill:none;stroke:rgb(255 255 255/.07);stroke-width:9}
+.ring-fg{fill:none;stroke:var(--c);stroke-width:9;stroke-linecap:round;transition:stroke-dashoffset .6s ease,stroke .3s}.coord.core-idle .ring-fg{stroke:var(--green);opacity:.75}
+.ring-txt{position:absolute;inset:0;display:grid;place-content:center;text-align:center}.ring-txt small{color:var(--faint);font-size:12px}.ring-txt b{font-size:36px;line-height:1.1;font-weight:600;letter-spacing:-.03em;font-variant-numeric:tabular-nums}.ring-txt span{color:var(--muted);font-size:12.5px;font-variant-numeric:tabular-nums}
+.coord.pulse .ringwrap{animation:hxPop .6s ease-out}
+.quorum{justify-self:stretch;display:grid;gap:8px}.q-label{display:flex;justify-content:space-between;gap:8px;color:var(--muted);font-size:12.5px}
+.slots{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.slot{height:30px;display:grid;place-items:center;border-radius:7px;border:1px dashed rgb(255 255 255/.16);color:var(--faint);font-size:12px;transition:background-color .3s,border-color .3s,color .3s}
+.slot.on{border:1px solid transparent;background:color-mix(in srgb,var(--cyan) 18%,transparent);color:var(--cyan);font-weight:500}
+.hxtag{fill:var(--red);font-size:12px;font-weight:600;text-anchor:end;animation:hxRise 1.8s ease-out forwards}
+@keyframes hxSpin{to{transform:rotate(360deg)}}@keyframes hxDash{to{stroke-dashoffset:-28}}@keyframes hxPop{40%{transform:scale(1.06)}}@keyframes hxRise{0%{opacity:0;transform:translateY(0)}15%{opacity:1}100%{opacity:0;transform:translateY(-18px)}}
+@media(max-width:900px){.fed{grid-template-columns:1fr;gap:14px}.lanes{display:none}.coord{order:-1}.banks{grid-template-rows:none}}
+@media(prefers-reduced-motion:reduce){.hero *{animation:none!important;transition:none!important}button:active:not(:disabled){transform:none}}
 </style>
 </head>
-<body><main>
-<header><div><div class="eyebrow">CSC3104 · Resilient bank federation</div><h1>Operations dashboard</h1><div id="updated" class="subtle">Connecting to the demo…</div></div>
-<<<<<<< Updated upstream
-</header>
-=======
-<div class="toolbar"><button id="refresh">Refresh</button></div></header>
-<section class="card hero" aria-label="Live federation visualiser"><div class="hero-head"><div><div class="label">Live federation</div><div class="hero-title" id="hxTitle">Connecting…</div></div>
-<div class="legend"><span><i style="background:var(--green)"></i>Training</span><span><i style="background:var(--cyan)"></i>Update sent</span><span><i style="background:var(--amber)"></i>Waiting for round</span><span><i style="background:var(--red)"></i>Down / recovering</span><span><i style="background:#7d8fa8"></i>Idle</span></div></div>
-<svg id="hx" viewBox="0 0 1000 455" role="img" aria-label="Three banks training locally and sending model updates to the global model">
-<defs><filter id="hxGlow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-<symbol id="hxBrainSym" viewBox="-64 -54 128 108"><g fill="currentColor"><circle cx="-34" cy="-26" r="22"/><circle cx="-46" cy="4" r="22"/><circle cx="-32" cy="30" r="22"/><circle cx="-14" cy="-36" r="18"/><circle cx="-14" cy="38" r="16"/><circle cx="-22" cy="2" r="26"/><circle cx="34" cy="-26" r="22"/><circle cx="46" cy="4" r="22"/><circle cx="32" cy="30" r="22"/><circle cx="14" cy="-36" r="18"/><circle cx="14" cy="38" r="16"/><circle cx="22" cy="2" r="26"/></g><rect class="hxbar" x="-5" y="-40" width="10" height="80" rx="4"/></symbol></defs>
-<g id="hxLinks"></g>
-<text class="hxcap" x="500" y="58">GLOBAL MODEL</text><text class="hxver" id="hxVer" x="500" y="106">v0</text><text class="hxsub" id="hxRound" x="500" y="132">—</text>
-<g id="hxCenter" class="core-idle"><circle id="hxHalo" cx="500" cy="222" r="88"/><circle id="hxRing" cx="500" cy="222" r="74"/><use id="hxCore" href="#hxBrainSym" x="428" y="161" width="144" height="122" filter="url(#hxGlow)"/></g>
-<g id="hxBanks"></g><g id="hxPackets"></g></svg>
-<div class="hero-note">White dots carry the global model out to the banks · cyan dots are bank updates · red dots are rejected (stale or late) updates</div></section>
->>>>>>> Stashed changes
-<nav class="tabs" aria-label="Dashboard sections"><button class="tab active" data-tab="monitor">Live monitor</button><button class="tab" data-tab="results">Results</button></nav>
-<section class="tab-panel" id="monitorPanel">
-<section class="grid cols" style="margin-bottom:14px"><article class="card"><h2>Start a training run <span class="pill" id="trainState">Ready</span></h2>
-<form id="trainForm" class="controls"><label>Training rounds<input id="roundInput" type="number" min="1" max="1000" value="30" required></label>
-<label>Attempt deadline (seconds)<input id="deadlineInput" type="number" min="0.001" step="any" value="30" required></label>
-<button class="primary" id="startTraining" type="submit">Start training</button></form>
-<div class="notice" id="trainMessage">Training runs on the prepared Kubernetes demo cluster. Results appear in the Results tab after export and evaluation.</div></article>
-<<<<<<< Updated upstream
-<article class="card"><h2>Simulate self-healing</h2>
-<form id="faultForm" class="controls"><label>Bank to fail<select id="faultBank"><option>bank-1</option><option>bank-2</option><option>bank-3</option></select></label>
-<button class="primary" id="simulateFailure" type="submit" disabled>Delete bank pod</button></form>
-<div class="notice" id="faultMessage">Start training to enable one bank failure simulation.</div>
+<body><a class="skip" href="#main">Skip to Content</a><main id="main">
+<header><div><h1>Bank Federation Operations</h1><div class="subline">CSC3104 Group 18 · <span id="updated">Connecting to the demo…</span></div></div>
+<div class="status" id="clusterChip"><span class="dot"></span><span id="clusterChipText">Checking cluster…</span></div></header>
+<section class="card hero" aria-labelledby="hxHeading"><div class="hero-head"><h2 id="hxHeading">Live Federation</h2><div class="hero-title" id="hxTitle" aria-live="polite">Connecting…</div></div>
+<p class="story" id="hxStory">Each bank trains on its own data and sends only model updates to the coordinator.</p>
+<div class="fed"><div class="banks" id="hxBanks"></div><div class="lanes" id="hxLanes" aria-hidden="true"></div>
+<div class="coord core-idle" id="hxCenter"><div class="coord-head"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01"/></svg>Coordinator <small>FedAvg</small></div>
+<div class="ringwrap"><svg viewBox="0 0 120 120" aria-hidden="true"><circle class="ring-bg" cx="60" cy="60" r="52"/><circle class="ring-fg" id="hxRing" cx="60" cy="60" r="52" stroke-dasharray="326.73" stroke-dashoffset="326.73"/></svg>
+<div class="ring-txt"><small>Global model</small><b id="hxVer">v0</b><span id="hxRound">No rounds yet</span></div></div>
+<div class="quorum"><div class="q-label"><span id="hxQLabel">Updates per round</span><span id="hxQNeed">quorum 2 of 3</span></div><div class="slots" id="hxSlots"></div></div></div></div></section>
+<nav class="tabs" role="tablist" aria-label="Dashboard sections"><button class="tab active" role="tab" aria-selected="true" aria-controls="monitorPanel" data-tab="monitor">Live Monitor</button><button class="tab" role="tab" aria-selected="false" aria-controls="resultsPanel" data-tab="results">Results</button></nav>
+<section class="tab-panel" id="monitorPanel" role="tabpanel">
+<section class="grid cols" style="margin-bottom:16px"><article class="card"><h2>Start a Training Run <span class="pill" id="trainState">Ready</span></h2>
+<form id="trainForm" class="controls"><label>Training rounds<input id="roundInput" name="rounds" type="number" inputmode="numeric" autocomplete="off" min="1" max="1000" value="30" required></label>
+<label>Attempt deadline (seconds)<input id="deadlineInput" name="deadline" type="number" inputmode="decimal" autocomplete="off" min="0.001" step="any" value="30" required></label>
+<button class="primary" id="startTraining" type="submit">Start Training</button></form>
+<div class="notice" id="trainMessage" aria-live="polite">Training runs on the prepared Kubernetes demo cluster. Results appear in the Results tab after export and evaluation.</div></article>
+<article class="card"><h2>Simulate Self-Healing</h2>
+<form id="faultForm" class="controls"><label>Bank to fail<select id="faultBank" name="bank"><option>bank-1</option><option>bank-2</option><option selected>bank-3</option></select></label>
+<button class="danger" id="simulateFailure" type="submit" disabled>Delete Bank Pod</button></form>
+<div class="notice" id="faultMessage" aria-live="polite">Start training to enable one bank failure simulation.</div>
 <div id="faultTracker" class="subtle">Deleted pod and replacement details will appear here.</div></article></section>
-=======
-<article class="card" style="margin-bottom:14px"><h2>Simulate a bank failure <span class="pill" id="faultState">Waiting for training</span></h2>
-<form id="faultForm" class="controls"><label>Bank to kill<select id="faultBank"><option>bank-1</option><option>bank-2</option><option selected>bank-3</option></select></label>
-<button class="primary danger" id="killBank" type="submit" disabled>Kill bank pod</button></form>
-<div class="notice" id="faultMessage">After a few rounds commit, kill one bank's pod. The other two keep training and Kubernetes replaces the killed pod.</div></article>
->>>>>>> Stashed changes
 <section class="grid stats">
 <article class="card"><div class="label">Kubernetes cluster</div><div class="value" id="cluster">—</div><div class="subtle" id="clusterNote">Checking cluster</div></article>
 <article class="card"><div class="label">Ready pods</div><div class="value" id="podCount">—</div><div class="subtle">Coordinator + bank workers</div></article>
@@ -121,20 +130,20 @@ td,th{padding:9px 8px;border-bottom:1px solid #26364c;vertical-align:top}td code
 </section>
 <section class="grid cols">
 <article class="card"><h2>Pods <span class="pill" id="podBadge">—</span></h2><div class="scroll"><table><thead><tr><th>Pod</th><th>Role</th><th>Phase / readiness</th><th>Restarts</th><th>Node</th><th>Conditions / issue</th></tr></thead><tbody id="pods"></tbody></table></div></article>
-<article class="card"><h2>Alerts &amp; observations <span class="pill" id="alertCount">0</span></h2><div class="alerts" id="alerts"><div class="blank">No alerts loaded</div></div></article>
+<article class="card"><h2>Alerts &amp; Observations <span class="pill" id="alertCount">0</span></h2><div class="alerts" id="alerts"><div class="blank">No alerts loaded</div></div></article>
 <article class="card"><h2>Deployments</h2><div class="scroll"><table><thead><tr><th>Name</th><th>Ready</th><th>Available</th><th>Image</th></tr></thead><tbody id="deployments"></tbody></table></div></article>
-<article class="card"><h2>Services &amp; recent Kubernetes events <span class="pill">times in SGT</span></h2><div class="scroll"><div id="services"></div><table><thead><tr><th>Time (SGT)</th><th>Type / reason</th><th>Object</th><th>Message</th></tr></thead><tbody id="kubeEvents"></tbody></table></div></article>
-<article class="card wide"><h2>Training progress <span class="pill" id="progressBadge">No run selected</span></h2><div class="grid"><canvas class="chart" id="roundChart"></canvas></div><div class="scroll"><table><thead><tr><th>Attempt</th><th>Version</th><th>Outcome</th><th>Duration</th><th>Accepted banks</th><th>Examples</th></tr></thead><tbody id="rounds"></tbody></table></div></article>
-<article class="card"><h2>Training event stream <span class="pill">events.jsonl</span></h2><pre class="logs" id="trainLog">Waiting for training events…</pre></article>
-<article class="card"><h2>Pod logs <span class="pill">latest 80 lines</span></h2><pre class="logs" id="podLogs">Waiting for pod logs…</pre></article>
+<article class="card"><h2>Services &amp; Recent Kubernetes Events <span class="pill">times in SGT</span></h2><div class="scroll"><div id="services"></div><table><thead><tr><th>Time (SGT)</th><th>Type / reason</th><th>Object</th><th>Message</th></tr></thead><tbody id="kubeEvents"></tbody></table></div></article>
+<article class="card wide"><h2>Training Progress <span class="pill" id="progressBadge">No run selected</span></h2><div class="grid"><canvas class="chart" id="roundChart" role="img" aria-label="Attempt duration by attempt"></canvas></div><div class="scroll"><table><thead><tr><th>Attempt</th><th>Version</th><th>Outcome</th><th>Duration</th><th>Accepted banks</th><th>Examples</th></tr></thead><tbody id="rounds"></tbody></table></div></article>
+<article class="card"><h2>Training Event Stream <span class="pill">events.jsonl</span></h2><pre class="logs" id="trainLog">Waiting for training events…</pre></article>
+<article class="card"><h2>Pod Logs <span class="pill">latest 80 lines</span></h2><pre class="logs" id="podLogs">Waiting for pod logs…</pre></article>
 </section>
 </section>
-<section class="tab-panel" id="resultsPanel" hidden>
-<article class="card" style="margin-bottom:14px"><div class="controls"><label>Run to inspect<select id="runSelect" class="runSelect" aria-label="Select a training run"></select></label><div><div class="label">Run outcome</div><div id="resultTitle" class="result-status">No run selected</div></div></div>
+<section class="tab-panel" id="resultsPanel" role="tabpanel" hidden>
+<article class="card" style="margin-bottom:16px"><div class="controls"><label>Run to inspect<select id="runSelect" class="runSelect" aria-label="Select a training run"></select></label><div><div class="label">Run outcome</div><div id="resultTitle" class="result-status">No run selected</div></div></div>
 <div id="resultMessage" class="notice">Start a training run from Live monitor. Once it finishes, its exported evaluation will be available here.</div></article>
 <div class="grid thirds" id="metrics"></div>
-<article class="card" style="margin-top:14px"><h2>Model quality across versions</h2><canvas class="chart" id="qualityChart"></canvas><div id="evaluationNote" class="subtle"></div></article>
-<article class="card" style="margin-top:14px"><h2>Evaluation by bank <span class="pill">test set</span></h2><div class="scroll"><table><thead><tr><th>Bank</th><th>Precision</th><th>Recall</th><th>F1</th><th>Average precision</th><th>ROC-AUC</th><th>False positive rate</th></tr></thead><tbody id="bankMetrics"></tbody></table></div></article>
+<article class="card" style="margin-top:16px"><h2>Model Quality Across Versions</h2><canvas class="chart" id="qualityChart" role="img" aria-label="Test average precision by model version"></canvas><div id="evaluationNote" class="subtle"></div></article>
+<article class="card" style="margin-top:16px"><h2>Evaluation by Bank <span class="pill">test set</span></h2><div class="scroll"><table><thead><tr><th>Bank</th><th>Precision</th><th>Recall</th><th>F1</th><th>Average precision</th><th>ROC-AUC</th><th>False positive rate</th></tr></thead><tbody id="bankMetrics"></tbody></table></div></article>
 </section>
 </main>
 <script>
@@ -143,85 +152,82 @@ function cell(v){return v===undefined||v===null||v===""?"—":String(v)}
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 function row(values){return "<tr>"+values.map(v=>"<td>"+esc(cell(v))+"</td>").join("")+"</tr>"}
 function badgeClass(s){return /completed|ready|running|committed|normal/i.test(s)?"ok":/deadline|warning|pending|late|stale|not ready|restart/i.test(s)?"warn":/failed|error|crash|backoff|insufficient|timeout/i.test(s)?"bad":"info"}
-function chart(canvas,series,title,yLabel){const ctx=canvas.getContext("2d"),w=canvas.clientWidth,h=canvas.clientHeight,ratio=devicePixelRatio||1;canvas.width=w*ratio;canvas.height=h*ratio;ctx.scale(ratio,ratio);ctx.clearRect(0,0,w,h);ctx.fillStyle="#91a3ba";ctx.font="11px Segoe UI";ctx.fillText(title,8,14);if(!series.length){ctx.fillText("No data available",10,40);return}const all=series.flatMap(s=>s.points).filter(p=>Number.isFinite(p[0])&&Number.isFinite(p[1]));if(!all.length)return;const xmin=Math.min(...all.map(p=>p[0])),xmax=Math.max(...all.map(p=>p[0])),ymin=Math.min(0,...all.map(p=>p[1])),ymax=Math.max(...all.map(p=>p[1]));const pad={l:40,r:10,t:25,b:25},cw=w-pad.l-pad.r,ch=h-pad.t-pad.b;ctx.strokeStyle="#26364c";ctx.fillStyle="#91a3ba";ctx.lineWidth=1;for(let i=0;i<4;i++){let y=pad.t+ch*i/3;ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(w-pad.r,y);ctx.stroke()}ctx.fillText(fmt(ymax-(ymax-ymin)*.0,2),3,pad.t+4);ctx.fillText(fmt(ymin,2),3,h-pad.b);const X=x=>pad.l+(x-xmin)/(xmax-xmin||1)*cw,Y=y=>pad.t+ch-(y-ymin)/(ymax-ymin||1)*ch;const colors=["#62d6d0","#ffcb72","#ff7b82","#9c9aff"];series.forEach((s,i)=>{ctx.strokeStyle=colors[i%colors.length];ctx.fillStyle=ctx.strokeStyle;ctx.lineWidth=2;ctx.beginPath();s.points.forEach((p,j)=>j?ctx.lineTo(X(p[0]),Y(p[1])):ctx.moveTo(X(p[0]),Y(p[1])));ctx.stroke();s.points.forEach(p=>{ctx.beginPath();ctx.arc(X(p[0]),Y(p[1]),3,0,7);ctx.fill()})})}
+function chart(canvas,series,title,yLabel){const ctx=canvas.getContext("2d"),w=canvas.clientWidth,h=canvas.clientHeight,ratio=devicePixelRatio||1;canvas.width=w*ratio;canvas.height=h*ratio;ctx.scale(ratio,ratio);ctx.clearRect(0,0,w,h);ctx.fillStyle="#a1a1a1";ctx.font="12px Inter, Segoe UI, system-ui, sans-serif";ctx.fillText(title,8,14);if(!series.length){ctx.fillText("No data available",10,40);return}const all=series.flatMap(s=>s.points).filter(p=>Number.isFinite(p[0])&&Number.isFinite(p[1]));if(!all.length)return;const xmin=Math.min(...all.map(p=>p[0])),xmax=Math.max(...all.map(p=>p[0])),ymin=Math.min(0,...all.map(p=>p[1])),ymax=Math.max(...all.map(p=>p[1]));const pad={l:40,r:10,t:25,b:25},cw=w-pad.l-pad.r,ch=h-pad.t-pad.b;ctx.strokeStyle="#262626";ctx.fillStyle="#a1a1a1";ctx.lineWidth=1;for(let i=0;i<4;i++){let y=pad.t+ch*i/3;ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(w-pad.r,y);ctx.stroke()}ctx.fillText(fmt(ymax-(ymax-ymin)*.0,2),3,pad.t+4);ctx.fillText(fmt(ymin,2),3,h-pad.b);const X=x=>pad.l+(x-xmin)/(xmax-xmin||1)*cw,Y=y=>pad.t+ch-(y-ymin)/(ymax-ymin||1)*ch;const colors=["#34d399","#38bdf8","#fbbf24","#f87171"];series.forEach((s,i)=>{ctx.strokeStyle=colors[i%colors.length];ctx.fillStyle=ctx.strokeStyle;ctx.lineWidth=2;ctx.beginPath();s.points.forEach((p,j)=>j?ctx.lineTo(X(p[0]),Y(p[1])):ctx.moveTo(X(p[0]),Y(p[1])));ctx.stroke();s.points.forEach(p=>{ctx.beginPath();ctx.arc(X(p[0]),Y(p[1]),3,0,7);ctx.fill()})})}
 let activeTab="monitor";
-function setTab(name){activeTab=name;document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===name));el("monitorPanel").hidden=name!=="monitor";el("resultsPanel").hidden=name!=="results";if(window.lastData)renderRun(window.lastData);history.replaceState(null,"",name==="results"?"#results":"#monitor")}
+function setTab(name){activeTab=name;document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===name)||b.setAttribute("aria-selected",b.dataset.tab===name));el("monitorPanel").hidden=name!=="monitor";el("resultsPanel").hidden=name!=="results";if(window.lastData)renderRun(window.lastData);history.replaceState(null,"",name==="results"?"#results":"#monitor")}
 function formatEvent(event){const details=[];for(const key of ["attempt","version","bank","outcome","status","valid","required","committed_rounds"]){if(event[key]!==undefined&&event[key]!==null)details.push(`${key}=${Array.isArray(event[key])?event[key].join(","):event[key]}`)}if(event.accepted)details.push(`accepted=${event.accepted.join(",")}`);if(event.error)details.push(`error=${event.error}`);const elapsed=Number(event.elapsed_seconds);return `[${Number.isFinite(elapsed)?elapsed.toFixed(2)+"s":"time unknown"}] ${event.event||"event"}${details.length?" · "+details.join(" · "):""}`}
 function renderRun(d){const run=d.run||{},s=run.summary||{},ev=run.evaluation||{},final=ev.final||{},options=d.runs||[],selected=run.run_id||"",rounds=run.rounds||[];
-<<<<<<< Updated upstream
 if(el("runSelect").dataset.current!==options.map(o=>o.id).join("|")){el("runSelect").innerHTML=options.map(o=>`<option value="${esc(o.id)}">${esc(o.label)}</option>`).join("");el("runSelect").dataset.current=options.map(o=>o.id).join("|")}el("runSelect").value=selected;
-=======
-// The blank option follows the newest/live run; only an explicit choice pins an older run.
-if(el("runSelect").dataset.current!==options.map(o=>o.id).join("|")){const keep=el("runSelect").value;el("runSelect").innerHTML='<option value="">Latest run (follows live training)</option>'+options.map(o=>`<option value="${esc(o.id)}">${esc(o.label)}</option>`).join("");el("runSelect").dataset.current=options.map(o=>o.id).join("|");el("runSelect").value=options.some(o=>o.id===keep)?keep:""}
->>>>>>> Stashed changes
 el("progressBadge").textContent=selected?`${selected}${d.active?" · LIVE":""}`:"No run selected";
 el("resultTitle").textContent=s.status||"No run selected";
 el("resultMessage").textContent=d.active?"Training is still running. The final test evaluation will appear here after the run exports and evaluates its checkpoints.":ev.final?`Results for ${selected}. Metrics are calculated from the run's saved checkpoints and evaluation dataset.`:"No exported evaluation is available for this run yet.";
 const events=run.events||[];el("trainLog").textContent=events.length?events.slice(-80).map(formatEvent).join("\n"):d.active?"Waiting for events from the coordinator…":selected?"No training events recorded for this run.":"Start training to see coordinator events.";el("trainLog").scrollTop=el("trainLog").scrollHeight;
-const metrics=[["Committed rounds",s.committed_rounds],["Attempts",s.attempts],["Successful round rate",s.successful_round_rate===undefined?null:fmt(s.successful_round_rate*100,1)+"%"],["Processed examples",s.processed_examples_returned],["Average precision",final.pr_auc_average_precision===undefined?null:fmt(final.pr_auc_average_precision,4)],["F1 score",final.f1===undefined?null:fmt(final.f1,4)],["ROC-AUC",final.roc_auc===undefined?null:fmt(final.roc_auc,4)],["Training time",s.training_seconds===undefined?null:fmt(s.training_seconds,1)+" s"],["Participation",Object.entries(s.participation||{}).map(([k,v])=>`${k}: ${v}`).join(" · ")] ];el("metrics").innerHTML=metrics.map(([k,v])=>`<div class="metric">${esc(cell(v))}<small>${esc(k)}</small></div>`).join("");
+const metrics=[["Committed rounds",s.committed_rounds],["Attempts",s.attempts],["Successful round rate",s.successful_round_rate===undefined?null:fmt(s.successful_round_rate*100,1)+"%"],["Processed examples",s.processed_examples_returned===undefined?null:new Intl.NumberFormat().format(s.processed_examples_returned)],["Average precision",final.pr_auc_average_precision===undefined?null:fmt(final.pr_auc_average_precision,4)],["F1 score",final.f1===undefined?null:fmt(final.f1,4)],["ROC-AUC",final.roc_auc===undefined?null:fmt(final.roc_auc,4)],["Training time",s.training_seconds===undefined?null:fmt(s.training_seconds,1)+" s"],["Participation",Object.entries(s.participation||{}).map(([k,v])=>`${k}: ${v}`).join(" · ")] ];el("metrics").innerHTML=metrics.map(([k,v])=>`<div class="metric">${esc(cell(v))}<small>${esc(k)}</small></div>`).join("");
 el("rounds").innerHTML=rounds.slice().reverse().map(r=>row([r.attempt,r.version,r.status,`${fmt(r.seconds,1)} s`,r.accepted,r.samples])).join("")||'<tr><td colspan="6" class="blank">Round records will appear when training starts.</td></tr>';
 const curve=ev.curve||[];const bank=ev.per_bank||{};el("bankMetrics").innerHTML=Object.entries(bank).map(([name,m])=>row([name,fmt(m.precision,3),fmt(m.recall,3),fmt(m.f1,3),fmt(m.pr_auc_average_precision,3),fmt(m.roc_auc,3),fmt(m.false_positive_rate,4)])).join("")||'<tr><td colspan="7" class="blank">Evaluation appears after the run is exported and evaluated.</td></tr>';el("evaluationNote").textContent=ev.synthetic_data?"Synthetic dataset: software-check metrics only, not fraud-detection evidence.":ev.threshold_rule||"";
 if(activeTab==="monitor")chart(el("roundChart"),[{points:rounds.map(r=>[Number(r.attempt),Number(r.seconds)])}],"Attempt duration (seconds)","seconds");if(activeTab==="results")chart(el("qualityChart"),[{points:curve.map(x=>[Number(x.version),Number(x.pr_auc_average_precision)])}],"Test average precision by model version","AP")}
-function render(d){window.lastData=d;el("updated").textContent="Last updated "+new Date(d.generated_at).toLocaleTimeString();el("cluster").textContent=d.kubernetes?.available?"Connected":d.prepared?"Unavailable":"Not set up";el("clusterNote").textContent=d.kubernetes?.error|| (d.prepared?"Context kind-bank-fl-demo / namespace bank-fl":"Run bank-fl demo setup first");const pods=d.kubernetes?.pods||[];const ready=pods.filter(p=>p.ready).length;el("podCount").textContent=pods.length?`${ready} / ${pods.length}`:"—";el("podBadge").textContent=`${ready} ready`;el("pods").innerHTML=pods.length?pods.map(p=>row([p.name,p.role,p.phase+(p.ready?" · Ready":" · Not Ready"),p.restarts,p.node,p.issues.join("; ")])).join(""):'<tr><td colspan="6" class="blank">No pods returned</td></tr>';
+function render(d){window.lastData=d;el("updated").textContent="Last updated "+new Date(d.generated_at).toLocaleTimeString();el("cluster").textContent=d.kubernetes?.available?"Connected":d.prepared?"Unavailable":"Not set up";el("clusterChip").className="status "+(d.kubernetes?.available?"ok":d.prepared?"bad":"warn");el("clusterChipText").textContent=d.kubernetes?.available?"Cluster connected":d.prepared?"Cluster unavailable":"Setup required";el("clusterNote").textContent=el("clusterNote").title=d.kubernetes?.error?"Start Docker Desktop, then wait for the cluster to reconnect. "+d.kubernetes.error:(d.prepared?"Context kind-bank-fl-demo / namespace bank-fl":"Run bank-fl demo setup first");const pods=d.kubernetes?.pods||[];const ready=pods.filter(p=>p.ready).length;el("podCount").textContent=pods.length?`${ready} / ${pods.length}`:"—";el("podBadge").textContent=`${ready} ready`;el("pods").innerHTML=pods.length?pods.map(p=>row([p.name,p.role,p.phase+(p.ready?" · Ready":" · Not Ready"),p.restarts,p.node,p.issues.join("; ")])).join(""):'<tr><td colspan="6" class="blank">No pods returned</td></tr>';
 el("deployments").innerHTML=(d.kubernetes?.deployments||[]).map(x=>row([x.name,`${x.ready}/${x.desired}`,x.available,x.images.join(", ")])).join("")||'<tr><td colspan="4" class="blank">No deployments found</td></tr>';
-el("services").innerHTML=(d.kubernetes?.services||[]).map(s=>`<div style="padding:7px;border-bottom:1px solid #26364c"><b>${esc(s.name)}</b> <span class="muted">${esc(s.cluster_ip)} · ${esc(s.ports.join(", "))}</span></div>`).join("")||'<div class="blank">No services found</div>';
+el("services").innerHTML=(d.kubernetes?.services||[]).map(s=>`<div class="service"><b>${esc(s.name)}</b> <span class="muted">${esc(s.cluster_ip)} · ${esc(s.ports.join(", "))}</span></div>`).join("")||'<div class="blank">No services found</div>';
 el("kubeEvents").innerHTML=(d.kubernetes?.events||[]).map(e=>row([e.time,`${e.type} / ${e.reason}`,e.object,e.message])).join("")||'<tr><td colspan="4" class="blank">No recent events</td></tr>';
-el("alerts").innerHTML=d.alerts.length?d.alerts.map(a=>`<div class="alert ${a.level}"><b>${esc(a.title)}</b><div>${esc(a.message)}</div></div>`).join(""):'<div class="alert">No issues detected in the latest snapshot.</div>';el("alertCount").textContent=d.alerts.length;
+el("alerts").innerHTML=d.alerts.length?d.alerts.map(a=>`<div class="alert ${a.level}"><b>${esc(a.title)}</b><div title="${esc(a.message)}">${esc(a.message)}</div></div>`).join(""):'<div class="alert">No issues detected in the latest snapshot.</div>';el("alertCount").textContent=d.alerts.length;
 const run=d.run||{},s=run.summary||{};el("training").textContent=d.active?"RUNNING":s.status||"IDLE";el("trainingNote").textContent=d.active?`${s.committed_rounds||0} committed · attempt ${run.latest_attempt||0}`:`${s.committed_rounds||0} committed rounds`;el("runStatus").textContent=s.status||"—";el("runNote").textContent=s.attempts?`${s.committed_rounds} / ${run.config?.rounds||"?"} rounds · ${fmt(s.successful_round_rate*100,0)}% success rate`:"No summary yet";
 const canStart=d.prepared&&d.kubernetes?.available;el("startTraining").disabled=d.active||!canStart;el("trainState").textContent=d.active?"Training in progress":!d.prepared?"Setup required":!d.kubernetes?.available?"Cluster unavailable":"Ready to train";const logLines=(d.training_log||"").trim().split("\n");const lastLog=logLines[logLines.length-1]||"";el("trainMessage").textContent=d.active?`Run ${run.run_id||"starting"} is active. Follow live progress here; open Results after it finishes.`:s.status?`Latest run: ${s.status}. Open Results to inspect its exported evaluation.`:!d.prepared?"Run `uv run bank-fl demo setup` before starting a training run.":!d.kubernetes?.available?`Kubernetes is unavailable: ${d.kubernetes?.error||"cluster connection failed"}`:lastLog||"Choose rounds and deadline, then start. Training runs through Flower on the Kubernetes demo cluster.";
-<<<<<<< Updated upstream
-const fault=d.fault||{},record=fault.record;el("simulateFailure").disabled=!fault.available||fault.requested;el("faultMessage").textContent=record?.status==="ready"?`${record.bank} recovered and became Ready in ${fmt(record.fault_to_ready_seconds,1)} s. Only one simulation is allowed per run.`:record?.status==="timed_out"?"Replacement did not become Ready before the recovery timeout.":record?.status==="failed"?`Failure simulation failed: ${record.error||"unknown error"}`:fault.requested?"Failure injected; tracking pod replacement…":fault.available?"Choose a bank and delete its pod. Kubernetes should create a replacement while training continues.":d.active?"Training is starting; wait for the coordinator before simulating a failure.":"Start training to enable one bank failure simulation.";el("faultTracker").innerHTML=record?`<div>Bank: <b>${esc(record.bank)}</b> · Status: <b>${esc(record.status||"unknown")}</b></div><div>Deleted pod: <code>${esc(record.deleted_pod||"waiting")}</code></div><div>Replacement pod: <code>${esc(record.replacement_pod||"waiting for Kubernetes")}</code></div><div>Replacement UID: <code>${esc(record.replacement_uid||"—")}</code></div>`:"Deleted pod and replacement details will appear here.";
+hero(d);const fault=d.fault||{},record=fault.record;el("simulateFailure").disabled=!fault.available||fault.requested;el("faultMessage").textContent=record?.status==="ready"?`${record.bank} recovered and became Ready in ${fmt(record.fault_to_ready_seconds,1)} s. Only one simulation is allowed per run.`:record?.status==="timed_out"?"Replacement did not become Ready before the recovery timeout.":record?.status==="failed"?`Failure simulation failed: ${record.error||"unknown error"}`:fault.requested?"Failure injected; tracking pod replacement…":fault.available?"Choose a bank and delete its pod. Kubernetes should create a replacement while training continues.":d.active?"Training is starting; wait for the coordinator before simulating a failure.":"Start training to enable one bank failure simulation.";el("faultTracker").innerHTML=record?`<div>Bank: <b>${esc(record.bank)}</b> · Status: <b>${esc(record.status||"unknown")}</b></div><div>Deleted pod: <code>${esc(record.deleted_pod||"waiting")}</code></div><div>Replacement pod: <code>${esc(record.replacement_pod||"waiting for Kubernetes")}</code></div><div>Replacement UID: <code>${esc(record.replacement_uid||"—")}</code></div>`:"Deleted pod and replacement details will appear here.";
 renderRun(d);el("podLogs").textContent=d.kubernetes?.logs||d.kubernetes?.logs_error||"No pod logs available."}
 let busy=false,refreshQueued=false,selectionVersion=0;async function refresh(){if(busy){refreshQueued=true;return}busy=true;const version=selectionVersion;try{const q=el("runSelect").value;const r=await fetch("/api/dashboard"+(q?"?run="+encodeURIComponent(q):""),{cache:"no-store"});const d=await r.json();if(!r.ok)throw new Error(d.error||"Dashboard refresh failed");if(version===selectionVersion)render(d)}catch(e){if(version===selectionVersion)el("updated").textContent="Dashboard update failed: "+e.message}finally{busy=false;if(refreshQueued){refreshQueued=false;refresh()}}}
 document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>setTab(b.dataset.tab)));el("runSelect").addEventListener("change",()=>{selectionVersion++;refresh()});
 el("trainForm").addEventListener("submit",async event=>{event.preventDefault();const button=el("startTraining");button.disabled=true;selectionVersion++;el("runSelect").value="";render({...window.lastData,active:true,runs:[],run:{run_id:null,summary:{},evaluation:{},rounds:[],events:[],config:{},latest_attempt:0}});el("trainMessage").textContent="Starting the Kubernetes training run…";try{const response=await fetch("/api/train",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({rounds:Number(el("roundInput").value),deadline:Number(el("deadlineInput").value)})});const result=await response.json();if(!response.ok)throw new Error(result.error||"Unable to start training");el("trainMessage").textContent=`Training started (process ${result.pid}). Live progress will appear here.`;await refresh()}catch(error){el("trainMessage").textContent=error.message;button.disabled=false;await refresh()}});
-el("faultForm").addEventListener("submit",async event=>{event.preventDefault();const button=el("simulateFailure");button.disabled=true;el("faultMessage").textContent="Injecting the failure and waiting for Kubernetes to recreate the pod…";try{const response=await fetch("/api/fail",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({bank:el("faultBank").value})});const result=await response.json();if(!response.ok)throw new Error(result.error||"Unable to simulate the failure");el("faultMessage").textContent=result.record.recovery_censored?"Replacement was not observed before the timeout. Check the pod status and event stream.":`${result.bank} recovered and became Ready in ${fmt(result.record.fault_to_ready_seconds,1)} seconds.`;await refresh()}catch(error){el("faultMessage").textContent=error.message;button.disabled=false;await refresh()}});
-if(location.hash==="#results")setTab("results");refresh();setInterval(refresh,5000);
-=======
-hero(d);const faultLines=(d.fault_log||"").trim().split("\n").filter(Boolean);el("killBank").disabled=!d.active||faultPending||faultLines.length>0;el("faultState").textContent=d.active?(faultLines.length?"Fault injected":"Ready to kill"):"Waiting for training";if(faultLines.length)el("faultMessage").textContent=faultLines[faultLines.length-1];
-renderRun(d);el("podLogs").textContent=d.kubernetes?.logs||d.kubernetes?.logs_error||"No pod logs available."}
-let busy=false;async function refresh(){if(busy)return;busy=true;try{const q=el("runSelect").value;const r=await fetch("/api/dashboard"+(q?"?run="+encodeURIComponent(q):""),{cache:"no-store"});const d=await r.json();if(!r.ok)throw new Error(d.error||"Dashboard refresh failed");render(d)}catch(e){el("updated").textContent="Dashboard update failed: "+e.message}finally{busy=false}}
-document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>setTab(b.dataset.tab)));el("refresh").addEventListener("click",refresh);el("runSelect").addEventListener("change",refresh);
-el("trainForm").addEventListener("submit",async event=>{event.preventDefault();const button=el("startTraining");button.disabled=true;el("runSelect").value="";el("trainMessage").textContent="Starting the Kubernetes training run…";try{const response=await fetch("/api/train",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({rounds:Number(el("roundInput").value),deadline:Number(el("deadlineInput").value)})});const result=await response.json();if(!response.ok)throw new Error(result.error||"Unable to start training");el("trainMessage").textContent=`Training started (process ${result.pid}). Live progress will appear here.`;await refresh()}catch(error){el("trainMessage").textContent=error.message;button.disabled=false}});
-let faultPending=false;el("faultForm").addEventListener("submit",async event=>{event.preventDefault();const bank=el("faultBank").value;faultPending=true;el("killBank").disabled=true;el("faultMessage").textContent=`Terminating ${bank}'s pod…`;try{const response=await fetch("/api/fail",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({bank})});const result=await response.json();if(!response.ok)throw new Error(result.error||"Unable to kill the bank");el("faultMessage").textContent=`Killing ${bank}. Watch the Pods table: a replacement pod starts while the other banks keep committing rounds.`;await refresh()}catch(error){el("faultMessage").textContent=error.message}finally{faultPending=false}});
+// Deleting a pod is destructive: the first click arms the button, a second click within 4 s confirms.
+let disarm;el("faultForm").addEventListener("submit",async event=>{event.preventDefault();const button=el("simulateFailure");
+if(!button.classList.contains("armed")){button.classList.add("armed");button.textContent=`Confirm: Delete ${el("faultBank").value}`;clearTimeout(disarm);disarm=setTimeout(()=>{button.classList.remove("armed");button.textContent="Delete Bank Pod"},4000);return}
+clearTimeout(disarm);button.classList.remove("armed");button.textContent="Delete Bank Pod";button.disabled=true;el("faultMessage").textContent="Injecting the failure and waiting for Kubernetes to recreate the pod…";try{const response=await fetch("/api/fail",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({bank:el("faultBank").value})});const result=await response.json();if(!response.ok)throw new Error(result.error||"Unable to simulate the failure");el("faultMessage").textContent=result.record.recovery_censored?"Replacement was not observed before the timeout. Check the pod status and event stream.":`${result.bank} recovered and became Ready in ${fmt(result.record.fault_to_ready_seconds,1)} seconds.`;await refresh()}catch(error){el("faultMessage").textContent=error.message;button.disabled=false;await refresh()}});
 // Federation visualiser: bank states come from pod readiness and the coordinator's event log.
-const NS="http://www.w3.org/2000/svg",HXB=[["bank-1",40,30,"M200 140 C200 230 320 232 438 218"],["bank-2",640,30,"M800 140 C800 230 680 232 562 218"],["bank-3",340,335,"M500 335 C500 318 500 302 500 286"]];
+const NS="http://www.w3.org/2000/svg",BANKS=["bank-1","bank-2","bank-3"],ROW=120,GAP=14;
+const ICONS={training:'<path d="M21 12a9 9 0 1 1-6.22-8.56"/>',sent:'<path d="M20 6 9 17l-5-5"/>',waiting:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',down:'<circle cx="12" cy="12" r="9"/><path d="m15 9-6 6M9 9l6 6"/>',idle:'<circle cx="12" cy="12" r="3"/>'};
+const ico=(p,cls="")=>`<svg class="ico ${cls}" viewBox="0 0 24 24" aria-hidden="true">${p}</svg>`,bankName=b=>"Bank "+b.split("-")[1];
 const hxSeen={run:undefined,n:0},hxMotion=!matchMedia("(prefers-reduced-motion: reduce)").matches;
-function hxInit(){el("hxLinks").innerHTML=HXB.map(([b,,,d])=>`<path id="hxl-${b}" class="hxlink s-idle" d="${d}"/>`).join("");
-el("hxBanks").innerHTML=HXB.map(([b,x,y])=>`<g id="hx-${b}" class="s-idle" transform="translate(${x},${y})"><rect class="hxbox" width="320" height="110" rx="22" filter="url(#hxGlow)"/>
-<g class="db" transform="translate(34,18)"><path class="dbbody" d="M0 8 V38 A30 8 0 0 0 60 38 V8 Z"/><ellipse class="dbtop" cx="30" cy="8" rx="30" ry="8"/><ellipse class="dbshine" cx="30" cy="8" rx="30" ry="8"/></g>
-<path class="hxflow" d="M110 41 H168"/><path class="hxhead" d="M162 35 L169 41 L162 47"/><use class="hxmini" href="#hxBrainSym" x="178" y="12" width="70" height="60"/>
-<g class="hxicon" transform="translate(283,41)"><circle class="bg" r="18"/><g class="hxi i-training"><path d="M10 0 A10 10 0 0 1 -7 7"/><path d="M-2 7 L-7 7 L-7 12"/><path d="M-10 0 A10 10 0 0 1 7 -7"/><path d="M2 -7 L7 -7 L7 -12"/></g>
-<path class="hxi i-sent" d="M-7 0 L-2 5 L8 -6"/><path class="hxi i-down" d="M-6 -6 L6 6 M6 -6 L-6 6"/><g class="hxi i-waiting"><circle r="9"/><path d="M0 -5 V0 L4 3"/></g><circle class="hxi i-idle" r="5"/></g>
-<text class="hxname" x="34" y="94">${b.toUpperCase().replace("-"," ")}</text><text class="hxstate" x="120" y="94">Idle</text><text class="hxcount" x="296" y="94" text-anchor="end">0 rounds</text></g>`).join("")}
-function hxSvg(tag,attrs){const n=document.createElementNS(NS,tag);for(const k in attrs)n.setAttribute(k,attrs[k]);el("hxPackets").append(n);return n}
-function hxPulse(){const r=el("hxRing");r.classList.remove("pulse");void r.getBoundingClientRect();r.classList.add("pulse")}
-function hxFly(bank,inbound,color,tag){if(!hxMotion)return;const p=el("hxl-"+bank),L=p.getTotalLength(),c=hxSvg("circle",{r:7,fill:color,filter:"url(#hxGlow)"}),t0=performance.now(),dur=1100;
+function hxInit(){el("hxBanks").innerHTML=BANKS.map(b=>`<div class="bank s-idle" id="hx-${b}"><div class="bank-top"><span class="bank-name">${ico('<path d="M3 21h18M5 21v-9M19 21v-9M9.5 21v-9M14.5 21v-9M2 10l10-7 10 7z"/>')}${bankName(b)}</span><span class="state">${Object.entries(ICONS).map(([k,p])=>ico(p,"st st-"+k)).join("")}<span class="st-label">Idle</span></span></div>
+<div class="bank-sub">${ico('<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>')}<span class="hx-data">Private data never leaves this bank</span></div><div class="strip" aria-hidden="true"></div><div class="bank-foot"><span class="hx-used">No rounds yet</span><span class="hx-pct"></span></div></div>`).join("");
+el("hxLanes").innerHTML=BANKS.map(b=>`<svg class="lane s-idle" id="hxlane-${b}"><path class="track" id="hxl-${b}"/><circle class="port" r="3.5"/><circle class="port" r="3.5"/></svg>`).join("");
+hxLayout();if(window.ResizeObserver)new ResizeObserver(hxLayout).observe(el("hxLanes"))}
+// Each lane runs from its bank card to the coordinator, which sits level with the middle bank.
+function hxLayout(){const w=el("hxLanes").clientWidth;BANKS.forEach((b,i)=>{const y0=ROW/2,y1=y0+(1-i)*(ROW+GAP),ports=el("hxlane-"+b).querySelectorAll(".port");
+el("hxl-"+b).setAttribute("d",`M0 ${y0} C${w*.55} ${y0} ${w*.45} ${y1} ${w} ${y1}`);ports[0].setAttribute("cx",0);ports[0].setAttribute("cy",y0);ports[1].setAttribute("cx",w);ports[1].setAttribute("cy",y1)})}
+function hxPulse(){const c=el("hxCenter");c.classList.remove("pulse");void c.offsetWidth;c.classList.add("pulse")}
+function hxFly(bank,inbound,color,tag){const p=el("hxl-"+bank),svg=p.ownerSVGElement;if(!hxMotion||!svg.getClientRects().length)return;const L=p.getTotalLength(),c=document.createElementNS(NS,"circle"),t0=performance.now(),dur=1000;c.setAttribute("r",5);c.setAttribute("fill",color);svg.append(c);
 function step(t){const k=Math.min(1,(t-t0)/dur),e=k<.5?2*k*k:1-(-2*k+2)**2/2,pt=p.getPointAtLength((inbound?e:1-e)*L);c.setAttribute("cx",pt.x);c.setAttribute("cy",pt.y);if(k<1)return requestAnimationFrame(step);c.remove();
-if(inbound&&tag){const s=hxSvg("text",{class:"hxtag",x:pt.x,y:pt.y-14});s.textContent=tag;setTimeout(()=>s.remove(),1900)}}requestAnimationFrame(step)}
+if(inbound&&tag){const s=document.createElementNS(NS,"text");s.setAttribute("class","hxtag");s.setAttribute("x",pt.x-8);s.setAttribute("y",pt.y-10);s.textContent=tag;svg.append(s);setTimeout(()=>s.remove(),1900)}}requestAnimationFrame(step)}
 function hero(d){const run=d.run||{},act=d.active,starting=act&&!!run.summary?.status,ev=starting?[]:run.events||[],cfg=starting?{}:run.config||{},pods=d.kubernetes?.pods||[],k8s=d.kubernetes?.available;
-const pending={},sent=new Set(),rejoining={},contrib={};let version=0;
-for(const e of ev){if(e.event==="attempt_started")sent.clear();else if(e.event==="dispatched")pending[e.bank]=e.request_id;
-else if(e.event==="reply"){if(e.request_id&&pending[e.bank]===e.request_id)delete pending[e.bank];if(e.outcome==="accepted"){sent.add(e.bank);rejoining[e.bank]=false}else if(e.outcome==="client_error")rejoining[e.bank]=true}
-else if(e.event==="committed"){version=e.version;(e.accepted||[]).forEach(b=>contrib[b]=(contrib[b]||0)+1)}}
-const live=pods.filter(p=>!p.terminating),up=role=>live.some(p=>p.role===role&&p.ready),f=act&&!starting?d.fault:null;
-for(const [b] of HXB){const exists=live.some(p=>p.role===b),lost=f?.bank===b&&!ev.some(e=>e.event==="dispatched"&&e.bank===b&&e.unix_time>f.unix_time);let s,label;
+const pending={},sent=[],rejoining={},contrib={},byVersion=[];let version=0;
+for(const e of ev){if(e.event==="attempt_started")sent.length=0;else if(e.event==="dispatched")pending[e.bank]=e.request_id;
+else if(e.event==="reply"){if(e.request_id&&pending[e.bank]===e.request_id)delete pending[e.bank];if(e.outcome==="accepted"){if(!sent.includes(e.bank))sent.push(e.bank);rejoining[e.bank]=false}else if(e.outcome==="client_error")rejoining[e.bank]=true}
+else if(e.event==="committed"){version=e.version;byVersion[e.version]=new Set(e.accepted||[]);(e.accepted||[]).forEach(b=>contrib[b]=(contrib[b]||0)+1)}}
+const live=pods.filter(p=>!p.terminating),up=role=>live.some(p=>p.role===role&&p.ready),f=act&&!starting?d.fault?.record:null;
+const parts=run["run.json"]?.dataset?.partitions?.train||{},total=cfg.rounds||version,needed=cfg.quorum||2,nb=cfg.banks||3,states={};
+for(const b of BANKS){const exists=live.some(p=>p.role===b),lost=f?.bank===b&&!ev.some(e=>e.event==="dispatched"&&e.bank===b&&e.unix_time>f.unix_time);let s,label;
 if(!k8s){s="idle";label="Offline"}else if(!up(b)){s="down";label=exists?"Restarting":"Pod down"}else if(lost){s="down";label="Recovering"}
-else if(act&&pending[b]){s="training";label="Training"}else if(act&&sent.has(b)){s="sent";label="Update sent"}
-else if(act){s="waiting";label=rejoining[b]?"Rejoining":"Waiting"}else{s="idle";label="Idle"}
-const g=el("hx-"+b);g.setAttribute("class","s-"+s);g.querySelector(".hxstate").textContent=label;g.querySelector(".hxcount").textContent=`${contrib[b]||0} round${contrib[b]===1?"":"s"}`;el("hxl-"+b).setAttribute("class","hxlink s-"+s)}
-el("hxCenter").setAttribute("class",k8s&&!up("coordinator")?"core-down":act?"core-live":"core-idle");
-const total=cfg.rounds||0,status=run.summary?.status;el("hxVer").textContent="v"+version;
-el("hxRound").textContent=starting?"Connecting to the banks":total?`${version} / ${total} rounds · quorum ${cfg.quorum||2} of ${cfg.banks||3}`:"No training run yet";
-el("hxTitle").textContent=!k8s?"Kubernetes cluster unavailable":starting?"Starting training…":act?`Training · round ${Math.min(version+1,total||version+1)}${total?" of "+total:""}`:status?`Last run ${status.replace(/_/g," ")} · ${version} rounds`:"Ready to train";
+else if(act&&pending[b]){s="training";label="Training"}else if(act&&sent.includes(b)){s="sent";label="Update sent"}
+else if(act){s="waiting";label=rejoining[b]?"Rejoining":"Waiting"}else{s="idle";label="Idle"}states[b]=s;
+const card=el("hx-"+b),n=parts[b]?.samples,used=contrib[b]||0,cells=[];card.className="bank s-"+s;card.querySelector(".st-label").textContent=label;
+card.querySelector(".hx-data").textContent=n?`${new Intl.NumberFormat().format(n)} private transactions · never shared`:"Private data never leaves this bank";
+for(let v=1;v<=Math.min(Math.max(total,version),120);v++)cells.push(`<i class="${byVersion[v]?(byVersion[v].has(b)?"on":"off"):""}"></i>`);card.querySelector(".strip").innerHTML=cells.join("");
+card.querySelector(".hx-used").textContent=version?`Used in ${used} of ${version} rounds`:"No rounds yet";card.querySelector(".hx-pct").textContent=version?Math.round(used/version*100)+"%":"";
+el("hxlane-"+b).setAttribute("class","lane s-"+s)}
+const center=el("hxCenter"),round=Math.min(version+1,total||version+1);center.className="coord "+(k8s&&!up("coordinator")?"core-down":act?"core-live":"core-idle")+(center.classList.contains("pulse")?" pulse":"");
+el("hxRing").style.strokeDashoffset=326.73*(1-(total?Math.min(1,version/total):0));el("hxVer").textContent="v"+version;el("hxRound").textContent=total?`${version} of ${total} rounds`:"No rounds yet";
+// Rounds commit almost as soon as the quorum arrives, so between arrivals show what the last round used.
+const live_=act&&sent.length,got=live_?sent:[...(byVersion[version]||[])].sort();el("hxQLabel").textContent=live_?`Round ${round} updates`:version?`Round ${version} averaged`:"Updates per round";el("hxQNeed").textContent=`quorum ${needed} of ${nb}`;el("hxSlots").innerHTML=Array.from({length:nb},(_,i)=>got[i]?`<span class="slot on">${bankName(got[i])}</span>`:`<span class="slot">${i<needed?"needed":"optional"}</span>`).join("");
+el("hxTitle").textContent=!k8s?"Kubernetes cluster unavailable":starting?"Starting training…":act?`Training · round ${round}${total?" of "+total:""}`:run.summary?.status?`Last run ${run.summary.status.replace(/_/g," ")} · ${version} rounds`:"Ready to train";
+const names=list=>list.length>1?list.slice(0,-1).map(bankName).join(", ")+" and "+bankName(list.at(-1)):bankName(list[0]),tr=BANKS.filter(b=>states[b]==="training"),dn=BANKS.filter(b=>states[b]==="down");
+el("hxStory").textContent=!k8s?"Start Docker Desktop so the dashboard can reach the Kubernetes cluster.":starting?"Starting Flower and connecting the three banks…":act?[tr.length?`${names(tr)} ${tr.length>1?"are":"is"} training on ${tr.length>1?"their":"its"} own data.`:"",dn.length?`${names(dn)} ${dn.length>1?"are":"is"} down, so the other banks carry on without ${dn.length>1?"them":"it"}.`:"",`The coordinator averages the first ${needed} updates it receives, then sends the new global model back to every bank.`].filter(Boolean).join(" "):run.summary?.status?`The last run committed ${version} rounds. Each bank trained only on its own data; only model updates reached the coordinator.`:"Press Start Training. Each bank trains on its own data and sends only model updates to the coordinator, which averages them into one shared model.";
 // Animate only events that arrived since the previous refresh; never replay an old run.
 if(hxSeen.run!==run.run_id||ev.length<hxSeen.n){hxSeen.run=run.run_id;hxSeen.n=ev.length;return}
 const fresh=ev.slice(hxSeen.n);hxSeen.n=ev.length;let t=0,arrive=0;
-for(const e of fresh){if(e.event==="reply"&&e.bank&&e.outcome!=="client_error"){const ok=e.outcome==="accepted",at=t;setTimeout(()=>hxFly(e.bank,true,ok?"#62d6d0":"#ff7b82",ok?null:e.outcome.replace(/_/g," ")+" ✕"),at);arrive=Math.max(arrive,at+1100);t+=160}
-else if(e.event==="committed"){t=Math.max(t,arrive);setTimeout(hxPulse,t);t+=450}else if(e.event==="dispatched"&&e.bank){const at=t;setTimeout(()=>hxFly(e.bank,false,"#e8eef7"),at);t+=140}}}
+for(const e of fresh){if(e.event==="reply"&&e.bank&&e.outcome!=="client_error"){const ok=e.outcome==="accepted",at=t;setTimeout(()=>hxFly(e.bank,true,ok?"#38bdf8":"#f87171",ok?null:e.outcome.replace(/_/g," ")+" ✕"),at);arrive=Math.max(arrive,at+1000);t+=160}
+else if(e.event==="committed"){t=Math.max(t,arrive);setTimeout(hxPulse,t);t+=450}else if(e.event==="dispatched"&&e.bank){const at=t;setTimeout(()=>hxFly(e.bank,false,"#fafafa"),at);t+=140}}}
 hxInit();
 if(location.hash==="#results")setTab("results");refresh();setInterval(refresh,2000);
->>>>>>> Stashed changes
 </script></body></html>"""
 
 
@@ -259,8 +265,6 @@ def launch_training(rounds, deadline):
         if _training_active():
             raise RuntimeError("Training is already running.")
         demo.ROOT.mkdir(exist_ok=True)
-        FAULT_LOG.unlink(missing_ok=True)  # A new run starts without an injected fault.
-        FAULT_STATE.unlink(missing_ok=True)
         with TRAINING_LOG.open("w", encoding="utf-8") as log:
             process = subprocess.Popen(
                 [
@@ -292,36 +296,6 @@ def launch_training(rounds, deadline):
         temporary.write_text(json.dumps(state), encoding="utf-8")
         temporary.replace(TRAINING_STATE)
     return {"status": "starting", "pid": process.pid}
-
-
-def launch_fault(bank):
-    global _fault_process
-    if bank not in BANKS:
-        raise ValueError(f"Bank must be one of {', '.join(BANKS)}.")
-    if not demo.active():
-        raise RuntimeError("Start training and wait for a few committed rounds first.")
-    with FAULT_LOCK:
-        if _fault_process is not None and _fault_process.poll() is None:
-            raise RuntimeError("A bank failure is already in progress.")
-        # `demo fail` waits for the replacement pod, so it runs in the background.
-        with FAULT_LOG.open("w", encoding="utf-8") as log:
-            _fault_process = subprocess.Popen(
-                [sys.executable, "-m", "app.cli", "demo", "fail", "--bank", bank],
-                env=demo.environment(),
-                stdin=subprocess.DEVNULL,
-                stdout=log,
-                stderr=subprocess.STDOUT,
-            )
-        # The visualiser keeps the bank red until the coordinator dispatches to it again.
-        FAULT_STATE.write_text(json.dumps({"bank": bank, "unix_time": time.time()}))
-    return {"status": "terminating", "bank": bank, "pid": _fault_process.pid}
-
-
-def _read_fault_log():
-    try:
-        return FAULT_LOG.read_text(encoding="utf-8", errors="replace")[-4_000:]
-    except FileNotFoundError:
-        return ""
 
 
 def _kubectl(*args):
@@ -826,8 +800,6 @@ def dashboard_data(selected_run=None):
         "active": active,
         "fault": {**_fault_status(latest), "available": demo_active and kubernetes.get("available", False)},
         "training_log": _read_training_log(),
-        "fault_log": _read_fault_log(),
-        "fault": _read_json(FAULT_STATE),
         "runs": runs,
         "run": run,
         "kubernetes": kubernetes,
@@ -900,21 +872,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def do_POST(self):
-<<<<<<< Updated upstream
         endpoint = urlsplit(self.path).path
         if endpoint not in {"/api/train", "/api/fail"}:
             self.send_error(404)
             return
         if not _valid_dashboard_origin(self):
             self.send_error(403, "Dashboard actions must come from this local dashboard.")
-=======
-        route = urlsplit(self.path).path
-        if route not in ("/api/train", "/api/fail"):
-            self.send_error(404)
-            return
-        if not _valid_dashboard_origin(self):
-            self.send_error(403, "Dashboard requests must come from this local dashboard.")
->>>>>>> Stashed changes
             return
         if self.headers.get_content_type() != "application/json":
             self.send_error(415, "Expected application/json.")
@@ -926,13 +889,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(length))
             if not isinstance(body, dict):
                 raise ValueError("Expected a JSON object.")
-<<<<<<< Updated upstream
             if endpoint == "/api/train":
-=======
-            if route == "/api/fail":
-                result = launch_fault(body.get("bank"))
-            else:
->>>>>>> Stashed changes
                 rounds = body.get("rounds")
                 deadline = body.get("deadline")
                 if (
@@ -942,13 +899,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 ):
                     raise ValueError("Rounds must be an integer and deadline must be a number.")
                 result = launch_training(rounds, deadline)
-<<<<<<< Updated upstream
                 status = 202
             else:
                 result = simulate_self_healing(body.get("bank"))
                 status = 200
-=======
->>>>>>> Stashed changes
             payload = json.dumps(result).encode("utf-8")
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             payload = json.dumps({"error": str(exc)}).encode("utf-8")
