@@ -18,6 +18,7 @@ You need four tools. Install them with one command, then restart machine.
 brew install uv kubernetes-cli kind && brew install --cask docker-desktop
 ```
 | Tool | What it is for |
+|------|----------------|
 | uv | Installs the right Python (3.12) and all Python packages for this project |
 | Docker Desktop | Builds and runs containers. Give it at least 4 CPUs and 6 GB memory (Settings → Resources) |
 | kubectl | Talks to Kubernetes |
@@ -69,6 +70,7 @@ uv run bank-fl predict <results-folder> --normal   # a normal payment
 Each demo run creates a folder under `results\demo`:
 
 | File | What it shows |
+|------|---------------|
 | `figures\comparison.png` | Round times and fraud-detection quality over time |
 | `figures\systems.png` | Training time, successful rounds, data transferred, memory |
 | `summary.json` | Rounds completed, how often each bank took part, rejected updates |

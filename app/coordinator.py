@@ -25,10 +25,24 @@ def run(config: RunConfig, manifest: dict, transport: Transport, output: Path, r
     outstanding = {}  # bank -> request ID; transport owns expiry and completion.
     started = time.monotonic()
     status = "startup_timeout"
+    online, seen = set(), set()
+
+    def watch_banks():
+        """Log banks appearing or disappearing, so a failure is visible while it happens."""
+        now_online = transport.online_banks()
+        for bank in sorted(online - now_online):
+            logger.event("bank_left", bank=bank)
+        for bank in sorted(now_online - online):
+            logger.event("bank_joined", bank=bank, rejoined=bank in seen)
+        online.clear()
+        online.update(now_online)
+        seen.update(now_online)
+        return now_online
+
     try:
         # Require the configured Q, not every bank, so a missing bank cannot prevent startup.
         ready_until = time.monotonic() + config.startup_timeout
-        while len(transport.online_banks()) < config.required:
+        while len(watch_banks()) < config.required:
             transport.poll()
             if time.monotonic() >= ready_until:
                 logger.event("startup_failed", required=config.required)
@@ -45,6 +59,7 @@ def run(config: RunConfig, manifest: dict, transport: Transport, output: Path, r
                 committed = False
                 dispatched = False
                 while True:
+                    watch_banks()
                     # Poll every reply in the returned batch before deciding to close.
                     for reply in transport.poll():
                         if outstanding.get(reply.bank_id) == reply.request_id:

@@ -107,6 +107,14 @@ class RunLog:
                 f"Attempt {details['attempt']} missed its deadline - "
                 f"{details['valid']}/{details['required']} required replies; model unchanged"
             )
+        elif name == "bank_left":
+            message = f"{details['bank']} went offline - training continues without it"
+        elif name == "bank_joined":
+            message = (
+                f"{details['bank']} is back online - it gets work from the next round"
+                if details["rejoined"]
+                else f"{details['bank']} connected"
+            )
         elif name == "startup_failed":
             message = f"Startup failed - need {details['required']} available banks"
         elif name == "finished":
