@@ -31,6 +31,10 @@ def add_parser(commands):
     start.add_argument("--deadline", type=float, default=30)
     fail = actions.add_parser("fail", help="replace bank 3's pod during an active demo")
     fail.add_argument("--bank", choices=["bank-1", "bank-2", "bank-3"], default="bank-3")
+    dashboard = actions.add_parser(
+        "dashboard", help="open the local Kubernetes and training dashboard"
+    )
+    dashboard.add_argument("--port", type=int, default=8765)
     actions.add_parser("status", help="show demo pods")
     actions.add_parser("results", help="retry export and evaluation of the latest finished run")
 
@@ -223,6 +227,7 @@ def start(rounds, deadline):
     package = stage_bundle(output)
     save("latest.json", {"pod": pod, "output": str(output), "run_id": None})
     process = psutil.Process()
+    active_started_at = time.time()
     forward = submission = None
     try:
         with (ROOT / "forward.log").open("w") as log:
@@ -257,6 +262,14 @@ def start(rounds, deadline):
                 "  uv run bank-fl demo fail\n",
                 flush=True,
             )
+            save(
+                "active.json",
+                {
+                    "pid": process.pid,
+                    "created": process.create_time(),
+                    "started_at": active_started_at,
+                },
+            )
             submission = subprocess.Popen(
                 [
                     "flwr",
@@ -274,7 +287,6 @@ def start(rounds, deadline):
                 encoding="utf-8",
                 errors="replace",
             )
-            save("active.json", {"pid": process.pid, "created": process.create_time()})
             with (ROOT / "session.log").open("w", encoding="utf-8") as session:
                 for line in submission.stdout:
                     print(line, end="", flush=True)
@@ -337,6 +349,10 @@ def dispatch(args):
             if active():
                 raise ValueError("Wait for training to finish before collecting results.")
             collect()
+        elif args.action == "dashboard":
+            from app.dashboard import serve
+
+            serve(args.port)
         else:
             read("settings.json")
             kubectl("get", "pods")
