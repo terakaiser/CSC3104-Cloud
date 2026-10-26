@@ -9,6 +9,8 @@ import re
 import subprocess
 import sys
 import threading
+import time
+import webbrowser
 from datetime import UTC, datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -26,6 +28,11 @@ SINGAPORE_TIME = timezone(timedelta(hours=8), "SGT")
 TRAINING_STATE = demo.ROOT / "dashboard-training.json"
 TRAINING_LOG = demo.ROOT / "dashboard-training.log"
 TRAINING_LOCK = threading.Lock()
+FAULT_LOG = demo.ROOT / "dashboard-fault.log"
+FAULT_STATE = demo.ROOT / "dashboard-fault.json"
+FAULT_LOCK = threading.Lock()
+BANKS = ("bank-1", "bank-2", "bank-3")
+_fault_process = None
 
 PAGE = r"""<!doctype html>
 <html lang="en">
@@ -48,13 +55,45 @@ td,th{padding:9px 8px;border-bottom:1px solid #26364c;vertical-align:top}td code
 .wide{grid-column:1/-1}.charts{grid-template-columns:1fr 1fr}.chart{width:100%;height:210px}.metric{font-size:22px;font-weight:700}.metric small{display:block;font-size:10px;color:var(--muted);font-weight:400;text-transform:uppercase;letter-spacing:.8px}
 .pill{border:1px solid var(--line);border-radius:99px;padding:3px 8px;font-size:10px;color:var(--muted)}.blank{padding:24px;text-align:center;color:var(--muted)}
 .tabs{display:flex;gap:8px;border-bottom:1px solid var(--line);margin:0 0 16px}.tab{background:transparent;border:0;border-bottom:2px solid transparent;border-radius:0;color:var(--muted);padding:11px 16px;cursor:pointer}.tab.active{border-color:var(--cyan);color:var(--text)}.tab-panel[hidden]{display:none}
+<<<<<<< Updated upstream
 .controls{display:flex;align-items:end;gap:12px;flex-wrap:wrap}.controls label{display:grid;gap:5px;color:var(--muted);font-size:11px}.controls input{width:120px;background:#0b1422;border:1px solid var(--line);border-radius:6px;color:var(--text);padding:9px}.primary{background:#145e63;border-color:#237d81;color:#efffff;font-weight:700;cursor:pointer}.primary:disabled{opacity:.5;cursor:not-allowed}.runSelect{min-width:260px}.notice{margin-top:10px;color:var(--muted);min-height:20px}.result-status{font-size:20px;font-weight:700}
 @media(max-width:950px){.cols,.thirds,.charts{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}main{padding:16px}header{align-items:flex-start}}
+=======
+.controls{display:flex;align-items:end;gap:12px;flex-wrap:wrap}.controls label{display:grid;gap:5px;color:var(--muted);font-size:11px}.controls input{width:120px;background:#0b1422;border:1px solid var(--line);border-radius:6px;color:var(--text);padding:9px}.primary{background:#145e63;border-color:#237d81;color:#efffff;font-weight:700;cursor:pointer}.primary:disabled{opacity:.5;cursor:not-allowed}.danger{background:#6b1f27;border-color:#a33a44}.runSelect{min-width:260px}.notice{margin-top:10px;color:var(--muted);min-height:20px}.result-status{font-size:20px;font-weight:700}
+@media(max-width:950px){.cols,.thirds,.charts{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}main{padding:16px}header{align-items:flex-start}.toolbar{flex-wrap:wrap;justify-content:flex-end}}
+.hero{margin-bottom:18px;padding:18px 22px 12px;background:radial-gradient(ellipse at 50% 55%,#152b52 0,#0e1a33 65%)}.hero-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}.hero-title{font-size:21px;font-weight:700;margin:2px 0 0}.legend{display:flex;gap:14px;flex-wrap:wrap;color:var(--muted);font-size:12px;padding-top:4px}.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:-1px}.hero-note{color:var(--muted);font-size:12px;text-align:center;margin-top:4px}
+#hx{width:100%;height:auto;display:block;max-height:470px;--c:#7d8fa8}.s-idle{--c:#7d8fa8}.s-training{--c:var(--green)}.s-sent{--c:var(--cyan)}.s-waiting{--c:var(--amber)}.s-down{--c:var(--red)}
+.hxbox{fill:#0c1830;stroke:var(--c);stroke-width:3;transition:stroke .4s}.s-down .hxbox{animation:hxBlink 1.1s ease-in-out infinite}.db .dbbody{fill:var(--c);opacity:.8}.db .dbtop{fill:var(--c)}.db .dbshine{fill:#fff;opacity:.3}
+.hxflow{stroke:var(--c);stroke-width:2.5;fill:none;stroke-dasharray:6 6}.s-training .hxflow{animation:hxDash .8s linear infinite}.hxhead{stroke:var(--c);stroke-width:2.5;fill:none;stroke-linecap:round;stroke-linejoin:round}.hxmini{color:var(--c);opacity:.8;--bar:#0c1830}
+.hxicon .bg{fill:var(--c);fill-opacity:.16;stroke:var(--c);stroke-width:2}.hxi{display:none;stroke:var(--c);stroke-width:3;fill:none;stroke-linecap:round;stroke-linejoin:round}.i-idle{fill:var(--c);stroke:none}
+.s-training .i-training,.s-sent .i-sent,.s-waiting .i-waiting,.s-down .i-down,.s-idle .i-idle{display:inline}.i-training{animation:hxSpin 1.3s linear infinite;transform-box:fill-box;transform-origin:center}
+.hxname{fill:var(--text);font-weight:700;font-size:15px;letter-spacing:.08em}.hxstate{fill:var(--c);font-size:15px;font-weight:600}.hxcount{fill:var(--muted);font-size:13px}
+.hxlink{fill:none;stroke:var(--c);stroke-width:3;opacity:.35;transition:stroke .4s}.hxlink.s-training{stroke-dasharray:8 10;animation:hxDash 1s linear infinite;opacity:.75}.hxlink.s-down{stroke-dasharray:3 9;opacity:.6}
+.hxbar{fill:var(--bar,#fff)}#hxCore{color:#5d6f96;transition:color .4s}.core-live #hxCore{color:#7f97cf}.core-down #hxCore{color:var(--red)}#hxHalo{fill:none;stroke:var(--c);stroke-width:2;opacity:.35}.core-live{--c:var(--green)}.core-down{--c:var(--red)}.core-live #hxHalo{animation:hxBreathe 2.4s ease-in-out infinite}
+#hxRing{fill:none;stroke:var(--cyan);stroke-width:3;opacity:0}#hxRing.pulse{animation:hxPulse 1s ease-out}.hxver{fill:var(--text);font-size:46px;font-weight:800;text-anchor:middle}.hxcap{fill:var(--muted);font-size:13px;text-anchor:middle;letter-spacing:.12em}.hxsub{fill:var(--muted);font-size:14px;text-anchor:middle}
+.hxtag{fill:var(--red);font-size:15px;font-weight:700;text-anchor:middle;animation:hxRise 1.8s ease-out forwards}
+@keyframes hxSpin{to{transform:rotate(360deg)}}@keyframes hxDash{to{stroke-dashoffset:-36}}@keyframes hxBlink{50%{stroke-opacity:.35}}@keyframes hxBreathe{50%{opacity:.9}}@keyframes hxPulse{0%{opacity:.95;r:74px}100%{opacity:0;r:130px}}@keyframes hxRise{0%{opacity:0;transform:translateY(0)}15%{opacity:1}100%{opacity:0;transform:translateY(-30px)}}
+@media(prefers-reduced-motion:reduce){#hx *{animation:none!important}}
+>>>>>>> Stashed changes
 </style>
 </head>
 <body><main>
 <header><div><div class="eyebrow">CSC3104 · Resilient bank federation</div><h1>Operations dashboard</h1><div id="updated" class="subtle">Connecting to the demo…</div></div>
+<<<<<<< Updated upstream
 </header>
+=======
+<div class="toolbar"><button id="refresh">Refresh</button></div></header>
+<section class="card hero" aria-label="Live federation visualiser"><div class="hero-head"><div><div class="label">Live federation</div><div class="hero-title" id="hxTitle">Connecting…</div></div>
+<div class="legend"><span><i style="background:var(--green)"></i>Training</span><span><i style="background:var(--cyan)"></i>Update sent</span><span><i style="background:var(--amber)"></i>Waiting for round</span><span><i style="background:var(--red)"></i>Down / recovering</span><span><i style="background:#7d8fa8"></i>Idle</span></div></div>
+<svg id="hx" viewBox="0 0 1000 455" role="img" aria-label="Three banks training locally and sending model updates to the global model">
+<defs><filter id="hxGlow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+<symbol id="hxBrainSym" viewBox="-64 -54 128 108"><g fill="currentColor"><circle cx="-34" cy="-26" r="22"/><circle cx="-46" cy="4" r="22"/><circle cx="-32" cy="30" r="22"/><circle cx="-14" cy="-36" r="18"/><circle cx="-14" cy="38" r="16"/><circle cx="-22" cy="2" r="26"/><circle cx="34" cy="-26" r="22"/><circle cx="46" cy="4" r="22"/><circle cx="32" cy="30" r="22"/><circle cx="14" cy="-36" r="18"/><circle cx="14" cy="38" r="16"/><circle cx="22" cy="2" r="26"/></g><rect class="hxbar" x="-5" y="-40" width="10" height="80" rx="4"/></symbol></defs>
+<g id="hxLinks"></g>
+<text class="hxcap" x="500" y="58">GLOBAL MODEL</text><text class="hxver" id="hxVer" x="500" y="106">v0</text><text class="hxsub" id="hxRound" x="500" y="132">—</text>
+<g id="hxCenter" class="core-idle"><circle id="hxHalo" cx="500" cy="222" r="88"/><circle id="hxRing" cx="500" cy="222" r="74"/><use id="hxCore" href="#hxBrainSym" x="428" y="161" width="144" height="122" filter="url(#hxGlow)"/></g>
+<g id="hxBanks"></g><g id="hxPackets"></g></svg>
+<div class="hero-note">White dots carry the global model out to the banks · cyan dots are bank updates · red dots are rejected (stale or late) updates</div></section>
+>>>>>>> Stashed changes
 <nav class="tabs" aria-label="Dashboard sections"><button class="tab active" data-tab="monitor">Live monitor</button><button class="tab" data-tab="results">Results</button></nav>
 <section class="tab-panel" id="monitorPanel">
 <section class="grid cols" style="margin-bottom:14px"><article class="card"><h2>Start a training run <span class="pill" id="trainState">Ready</span></h2>
@@ -62,11 +101,18 @@ td,th{padding:9px 8px;border-bottom:1px solid #26364c;vertical-align:top}td code
 <label>Attempt deadline (seconds)<input id="deadlineInput" type="number" min="0.001" step="any" value="30" required></label>
 <button class="primary" id="startTraining" type="submit">Start training</button></form>
 <div class="notice" id="trainMessage">Training runs on the prepared Kubernetes demo cluster. Results appear in the Results tab after export and evaluation.</div></article>
+<<<<<<< Updated upstream
 <article class="card"><h2>Simulate self-healing</h2>
 <form id="faultForm" class="controls"><label>Bank to fail<select id="faultBank"><option>bank-1</option><option>bank-2</option><option>bank-3</option></select></label>
 <button class="primary" id="simulateFailure" type="submit" disabled>Delete bank pod</button></form>
 <div class="notice" id="faultMessage">Start training to enable one bank failure simulation.</div>
 <div id="faultTracker" class="subtle">Deleted pod and replacement details will appear here.</div></article></section>
+=======
+<article class="card" style="margin-bottom:14px"><h2>Simulate a bank failure <span class="pill" id="faultState">Waiting for training</span></h2>
+<form id="faultForm" class="controls"><label>Bank to kill<select id="faultBank"><option>bank-1</option><option>bank-2</option><option selected>bank-3</option></select></label>
+<button class="primary danger" id="killBank" type="submit" disabled>Kill bank pod</button></form>
+<div class="notice" id="faultMessage">After a few rounds commit, kill one bank's pod. The other two keep training and Kubernetes replaces the killed pod.</div></article>
+>>>>>>> Stashed changes
 <section class="grid stats">
 <article class="card"><div class="label">Kubernetes cluster</div><div class="value" id="cluster">—</div><div class="subtle" id="clusterNote">Checking cluster</div></article>
 <article class="card"><div class="label">Ready pods</div><div class="value" id="podCount">—</div><div class="subtle">Coordinator + bank workers</div></article>
@@ -102,7 +148,12 @@ let activeTab="monitor";
 function setTab(name){activeTab=name;document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===name));el("monitorPanel").hidden=name!=="monitor";el("resultsPanel").hidden=name!=="results";if(window.lastData)renderRun(window.lastData);history.replaceState(null,"",name==="results"?"#results":"#monitor")}
 function formatEvent(event){const details=[];for(const key of ["attempt","version","bank","outcome","status","valid","required","committed_rounds"]){if(event[key]!==undefined&&event[key]!==null)details.push(`${key}=${Array.isArray(event[key])?event[key].join(","):event[key]}`)}if(event.accepted)details.push(`accepted=${event.accepted.join(",")}`);if(event.error)details.push(`error=${event.error}`);const elapsed=Number(event.elapsed_seconds);return `[${Number.isFinite(elapsed)?elapsed.toFixed(2)+"s":"time unknown"}] ${event.event||"event"}${details.length?" · "+details.join(" · "):""}`}
 function renderRun(d){const run=d.run||{},s=run.summary||{},ev=run.evaluation||{},final=ev.final||{},options=d.runs||[],selected=run.run_id||"",rounds=run.rounds||[];
+<<<<<<< Updated upstream
 if(el("runSelect").dataset.current!==options.map(o=>o.id).join("|")){el("runSelect").innerHTML=options.map(o=>`<option value="${esc(o.id)}">${esc(o.label)}</option>`).join("");el("runSelect").dataset.current=options.map(o=>o.id).join("|")}el("runSelect").value=selected;
+=======
+// The blank option follows the newest/live run; only an explicit choice pins an older run.
+if(el("runSelect").dataset.current!==options.map(o=>o.id).join("|")){const keep=el("runSelect").value;el("runSelect").innerHTML='<option value="">Latest run (follows live training)</option>'+options.map(o=>`<option value="${esc(o.id)}">${esc(o.label)}</option>`).join("");el("runSelect").dataset.current=options.map(o=>o.id).join("|");el("runSelect").value=options.some(o=>o.id===keep)?keep:""}
+>>>>>>> Stashed changes
 el("progressBadge").textContent=selected?`${selected}${d.active?" · LIVE":""}`:"No run selected";
 el("resultTitle").textContent=s.status||"No run selected";
 el("resultMessage").textContent=d.active?"Training is still running. The final test evaluation will appear here after the run exports and evaluates its checkpoints.":ev.final?`Results for ${selected}. Metrics are calculated from the run's saved checkpoints and evaluation dataset.`:"No exported evaluation is available for this run yet.";
@@ -118,6 +169,7 @@ el("kubeEvents").innerHTML=(d.kubernetes?.events||[]).map(e=>row([e.time,`${e.ty
 el("alerts").innerHTML=d.alerts.length?d.alerts.map(a=>`<div class="alert ${a.level}"><b>${esc(a.title)}</b><div>${esc(a.message)}</div></div>`).join(""):'<div class="alert">No issues detected in the latest snapshot.</div>';el("alertCount").textContent=d.alerts.length;
 const run=d.run||{},s=run.summary||{};el("training").textContent=d.active?"RUNNING":s.status||"IDLE";el("trainingNote").textContent=d.active?`${s.committed_rounds||0} committed · attempt ${run.latest_attempt||0}`:`${s.committed_rounds||0} committed rounds`;el("runStatus").textContent=s.status||"—";el("runNote").textContent=s.attempts?`${s.committed_rounds} / ${run.config?.rounds||"?"} rounds · ${fmt(s.successful_round_rate*100,0)}% success rate`:"No summary yet";
 const canStart=d.prepared&&d.kubernetes?.available;el("startTraining").disabled=d.active||!canStart;el("trainState").textContent=d.active?"Training in progress":!d.prepared?"Setup required":!d.kubernetes?.available?"Cluster unavailable":"Ready to train";const logLines=(d.training_log||"").trim().split("\n");const lastLog=logLines[logLines.length-1]||"";el("trainMessage").textContent=d.active?`Run ${run.run_id||"starting"} is active. Follow live progress here; open Results after it finishes.`:s.status?`Latest run: ${s.status}. Open Results to inspect its exported evaluation.`:!d.prepared?"Run `uv run bank-fl demo setup` before starting a training run.":!d.kubernetes?.available?`Kubernetes is unavailable: ${d.kubernetes?.error||"cluster connection failed"}`:lastLog||"Choose rounds and deadline, then start. Training runs through Flower on the Kubernetes demo cluster.";
+<<<<<<< Updated upstream
 const fault=d.fault||{},record=fault.record;el("simulateFailure").disabled=!fault.available||fault.requested;el("faultMessage").textContent=record?.status==="ready"?`${record.bank} recovered and became Ready in ${fmt(record.fault_to_ready_seconds,1)} s. Only one simulation is allowed per run.`:record?.status==="timed_out"?"Replacement did not become Ready before the recovery timeout.":record?.status==="failed"?`Failure simulation failed: ${record.error||"unknown error"}`:fault.requested?"Failure injected; tracking pod replacement…":fault.available?"Choose a bank and delete its pod. Kubernetes should create a replacement while training continues.":d.active?"Training is starting; wait for the coordinator before simulating a failure.":"Start training to enable one bank failure simulation.";el("faultTracker").innerHTML=record?`<div>Bank: <b>${esc(record.bank)}</b> · Status: <b>${esc(record.status||"unknown")}</b></div><div>Deleted pod: <code>${esc(record.deleted_pod||"waiting")}</code></div><div>Replacement pod: <code>${esc(record.replacement_pod||"waiting for Kubernetes")}</code></div><div>Replacement UID: <code>${esc(record.replacement_uid||"—")}</code></div>`:"Deleted pod and replacement details will appear here.";
 renderRun(d);el("podLogs").textContent=d.kubernetes?.logs||d.kubernetes?.logs_error||"No pod logs available."}
 let busy=false,refreshQueued=false,selectionVersion=0;async function refresh(){if(busy){refreshQueued=true;return}busy=true;const version=selectionVersion;try{const q=el("runSelect").value;const r=await fetch("/api/dashboard"+(q?"?run="+encodeURIComponent(q):""),{cache:"no-store"});const d=await r.json();if(!r.ok)throw new Error(d.error||"Dashboard refresh failed");if(version===selectionVersion)render(d)}catch(e){if(version===selectionVersion)el("updated").textContent="Dashboard update failed: "+e.message}finally{busy=false;if(refreshQueued){refreshQueued=false;refresh()}}}
@@ -125,6 +177,51 @@ document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>setT
 el("trainForm").addEventListener("submit",async event=>{event.preventDefault();const button=el("startTraining");button.disabled=true;selectionVersion++;el("runSelect").value="";render({...window.lastData,active:true,runs:[],run:{run_id:null,summary:{},evaluation:{},rounds:[],events:[],config:{},latest_attempt:0}});el("trainMessage").textContent="Starting the Kubernetes training run…";try{const response=await fetch("/api/train",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({rounds:Number(el("roundInput").value),deadline:Number(el("deadlineInput").value)})});const result=await response.json();if(!response.ok)throw new Error(result.error||"Unable to start training");el("trainMessage").textContent=`Training started (process ${result.pid}). Live progress will appear here.`;await refresh()}catch(error){el("trainMessage").textContent=error.message;button.disabled=false;await refresh()}});
 el("faultForm").addEventListener("submit",async event=>{event.preventDefault();const button=el("simulateFailure");button.disabled=true;el("faultMessage").textContent="Injecting the failure and waiting for Kubernetes to recreate the pod…";try{const response=await fetch("/api/fail",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({bank:el("faultBank").value})});const result=await response.json();if(!response.ok)throw new Error(result.error||"Unable to simulate the failure");el("faultMessage").textContent=result.record.recovery_censored?"Replacement was not observed before the timeout. Check the pod status and event stream.":`${result.bank} recovered and became Ready in ${fmt(result.record.fault_to_ready_seconds,1)} seconds.`;await refresh()}catch(error){el("faultMessage").textContent=error.message;button.disabled=false;await refresh()}});
 if(location.hash==="#results")setTab("results");refresh();setInterval(refresh,5000);
+=======
+hero(d);const faultLines=(d.fault_log||"").trim().split("\n").filter(Boolean);el("killBank").disabled=!d.active||faultPending||faultLines.length>0;el("faultState").textContent=d.active?(faultLines.length?"Fault injected":"Ready to kill"):"Waiting for training";if(faultLines.length)el("faultMessage").textContent=faultLines[faultLines.length-1];
+renderRun(d);el("podLogs").textContent=d.kubernetes?.logs||d.kubernetes?.logs_error||"No pod logs available."}
+let busy=false;async function refresh(){if(busy)return;busy=true;try{const q=el("runSelect").value;const r=await fetch("/api/dashboard"+(q?"?run="+encodeURIComponent(q):""),{cache:"no-store"});const d=await r.json();if(!r.ok)throw new Error(d.error||"Dashboard refresh failed");render(d)}catch(e){el("updated").textContent="Dashboard update failed: "+e.message}finally{busy=false}}
+document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>setTab(b.dataset.tab)));el("refresh").addEventListener("click",refresh);el("runSelect").addEventListener("change",refresh);
+el("trainForm").addEventListener("submit",async event=>{event.preventDefault();const button=el("startTraining");button.disabled=true;el("runSelect").value="";el("trainMessage").textContent="Starting the Kubernetes training run…";try{const response=await fetch("/api/train",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({rounds:Number(el("roundInput").value),deadline:Number(el("deadlineInput").value)})});const result=await response.json();if(!response.ok)throw new Error(result.error||"Unable to start training");el("trainMessage").textContent=`Training started (process ${result.pid}). Live progress will appear here.`;await refresh()}catch(error){el("trainMessage").textContent=error.message;button.disabled=false}});
+let faultPending=false;el("faultForm").addEventListener("submit",async event=>{event.preventDefault();const bank=el("faultBank").value;faultPending=true;el("killBank").disabled=true;el("faultMessage").textContent=`Terminating ${bank}'s pod…`;try{const response=await fetch("/api/fail",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({bank})});const result=await response.json();if(!response.ok)throw new Error(result.error||"Unable to kill the bank");el("faultMessage").textContent=`Killing ${bank}. Watch the Pods table: a replacement pod starts while the other banks keep committing rounds.`;await refresh()}catch(error){el("faultMessage").textContent=error.message}finally{faultPending=false}});
+// Federation visualiser: bank states come from pod readiness and the coordinator's event log.
+const NS="http://www.w3.org/2000/svg",HXB=[["bank-1",40,30,"M200 140 C200 230 320 232 438 218"],["bank-2",640,30,"M800 140 C800 230 680 232 562 218"],["bank-3",340,335,"M500 335 C500 318 500 302 500 286"]];
+const hxSeen={run:undefined,n:0},hxMotion=!matchMedia("(prefers-reduced-motion: reduce)").matches;
+function hxInit(){el("hxLinks").innerHTML=HXB.map(([b,,,d])=>`<path id="hxl-${b}" class="hxlink s-idle" d="${d}"/>`).join("");
+el("hxBanks").innerHTML=HXB.map(([b,x,y])=>`<g id="hx-${b}" class="s-idle" transform="translate(${x},${y})"><rect class="hxbox" width="320" height="110" rx="22" filter="url(#hxGlow)"/>
+<g class="db" transform="translate(34,18)"><path class="dbbody" d="M0 8 V38 A30 8 0 0 0 60 38 V8 Z"/><ellipse class="dbtop" cx="30" cy="8" rx="30" ry="8"/><ellipse class="dbshine" cx="30" cy="8" rx="30" ry="8"/></g>
+<path class="hxflow" d="M110 41 H168"/><path class="hxhead" d="M162 35 L169 41 L162 47"/><use class="hxmini" href="#hxBrainSym" x="178" y="12" width="70" height="60"/>
+<g class="hxicon" transform="translate(283,41)"><circle class="bg" r="18"/><g class="hxi i-training"><path d="M10 0 A10 10 0 0 1 -7 7"/><path d="M-2 7 L-7 7 L-7 12"/><path d="M-10 0 A10 10 0 0 1 7 -7"/><path d="M2 -7 L7 -7 L7 -12"/></g>
+<path class="hxi i-sent" d="M-7 0 L-2 5 L8 -6"/><path class="hxi i-down" d="M-6 -6 L6 6 M6 -6 L-6 6"/><g class="hxi i-waiting"><circle r="9"/><path d="M0 -5 V0 L4 3"/></g><circle class="hxi i-idle" r="5"/></g>
+<text class="hxname" x="34" y="94">${b.toUpperCase().replace("-"," ")}</text><text class="hxstate" x="120" y="94">Idle</text><text class="hxcount" x="296" y="94" text-anchor="end">0 rounds</text></g>`).join("")}
+function hxSvg(tag,attrs){const n=document.createElementNS(NS,tag);for(const k in attrs)n.setAttribute(k,attrs[k]);el("hxPackets").append(n);return n}
+function hxPulse(){const r=el("hxRing");r.classList.remove("pulse");void r.getBoundingClientRect();r.classList.add("pulse")}
+function hxFly(bank,inbound,color,tag){if(!hxMotion)return;const p=el("hxl-"+bank),L=p.getTotalLength(),c=hxSvg("circle",{r:7,fill:color,filter:"url(#hxGlow)"}),t0=performance.now(),dur=1100;
+function step(t){const k=Math.min(1,(t-t0)/dur),e=k<.5?2*k*k:1-(-2*k+2)**2/2,pt=p.getPointAtLength((inbound?e:1-e)*L);c.setAttribute("cx",pt.x);c.setAttribute("cy",pt.y);if(k<1)return requestAnimationFrame(step);c.remove();
+if(inbound&&tag){const s=hxSvg("text",{class:"hxtag",x:pt.x,y:pt.y-14});s.textContent=tag;setTimeout(()=>s.remove(),1900)}}requestAnimationFrame(step)}
+function hero(d){const run=d.run||{},act=d.active,starting=act&&!!run.summary?.status,ev=starting?[]:run.events||[],cfg=starting?{}:run.config||{},pods=d.kubernetes?.pods||[],k8s=d.kubernetes?.available;
+const pending={},sent=new Set(),rejoining={},contrib={};let version=0;
+for(const e of ev){if(e.event==="attempt_started")sent.clear();else if(e.event==="dispatched")pending[e.bank]=e.request_id;
+else if(e.event==="reply"){if(e.request_id&&pending[e.bank]===e.request_id)delete pending[e.bank];if(e.outcome==="accepted"){sent.add(e.bank);rejoining[e.bank]=false}else if(e.outcome==="client_error")rejoining[e.bank]=true}
+else if(e.event==="committed"){version=e.version;(e.accepted||[]).forEach(b=>contrib[b]=(contrib[b]||0)+1)}}
+const live=pods.filter(p=>!p.terminating),up=role=>live.some(p=>p.role===role&&p.ready),f=act&&!starting?d.fault:null;
+for(const [b] of HXB){const exists=live.some(p=>p.role===b),lost=f?.bank===b&&!ev.some(e=>e.event==="dispatched"&&e.bank===b&&e.unix_time>f.unix_time);let s,label;
+if(!k8s){s="idle";label="Offline"}else if(!up(b)){s="down";label=exists?"Restarting":"Pod down"}else if(lost){s="down";label="Recovering"}
+else if(act&&pending[b]){s="training";label="Training"}else if(act&&sent.has(b)){s="sent";label="Update sent"}
+else if(act){s="waiting";label=rejoining[b]?"Rejoining":"Waiting"}else{s="idle";label="Idle"}
+const g=el("hx-"+b);g.setAttribute("class","s-"+s);g.querySelector(".hxstate").textContent=label;g.querySelector(".hxcount").textContent=`${contrib[b]||0} round${contrib[b]===1?"":"s"}`;el("hxl-"+b).setAttribute("class","hxlink s-"+s)}
+el("hxCenter").setAttribute("class",k8s&&!up("coordinator")?"core-down":act?"core-live":"core-idle");
+const total=cfg.rounds||0,status=run.summary?.status;el("hxVer").textContent="v"+version;
+el("hxRound").textContent=starting?"Connecting to the banks":total?`${version} / ${total} rounds · quorum ${cfg.quorum||2} of ${cfg.banks||3}`:"No training run yet";
+el("hxTitle").textContent=!k8s?"Kubernetes cluster unavailable":starting?"Starting training…":act?`Training · round ${Math.min(version+1,total||version+1)}${total?" of "+total:""}`:status?`Last run ${status.replace(/_/g," ")} · ${version} rounds`:"Ready to train";
+// Animate only events that arrived since the previous refresh; never replay an old run.
+if(hxSeen.run!==run.run_id||ev.length<hxSeen.n){hxSeen.run=run.run_id;hxSeen.n=ev.length;return}
+const fresh=ev.slice(hxSeen.n);hxSeen.n=ev.length;let t=0,arrive=0;
+for(const e of fresh){if(e.event==="reply"&&e.bank&&e.outcome!=="client_error"){const ok=e.outcome==="accepted",at=t;setTimeout(()=>hxFly(e.bank,true,ok?"#62d6d0":"#ff7b82",ok?null:e.outcome.replace(/_/g," ")+" ✕"),at);arrive=Math.max(arrive,at+1100);t+=160}
+else if(e.event==="committed"){t=Math.max(t,arrive);setTimeout(hxPulse,t);t+=450}else if(e.event==="dispatched"&&e.bank){const at=t;setTimeout(()=>hxFly(e.bank,false,"#e8eef7"),at);t+=140}}}
+hxInit();
+if(location.hash==="#results")setTab("results");refresh();setInterval(refresh,2000);
+>>>>>>> Stashed changes
 </script></body></html>"""
 
 
@@ -162,6 +259,8 @@ def launch_training(rounds, deadline):
         if _training_active():
             raise RuntimeError("Training is already running.")
         demo.ROOT.mkdir(exist_ok=True)
+        FAULT_LOG.unlink(missing_ok=True)  # A new run starts without an injected fault.
+        FAULT_STATE.unlink(missing_ok=True)
         with TRAINING_LOG.open("w", encoding="utf-8") as log:
             process = subprocess.Popen(
                 [
@@ -193,6 +292,36 @@ def launch_training(rounds, deadline):
         temporary.write_text(json.dumps(state), encoding="utf-8")
         temporary.replace(TRAINING_STATE)
     return {"status": "starting", "pid": process.pid}
+
+
+def launch_fault(bank):
+    global _fault_process
+    if bank not in BANKS:
+        raise ValueError(f"Bank must be one of {', '.join(BANKS)}.")
+    if not demo.active():
+        raise RuntimeError("Start training and wait for a few committed rounds first.")
+    with FAULT_LOCK:
+        if _fault_process is not None and _fault_process.poll() is None:
+            raise RuntimeError("A bank failure is already in progress.")
+        # `demo fail` waits for the replacement pod, so it runs in the background.
+        with FAULT_LOG.open("w", encoding="utf-8") as log:
+            _fault_process = subprocess.Popen(
+                [sys.executable, "-m", "app.cli", "demo", "fail", "--bank", bank],
+                env=demo.environment(),
+                stdin=subprocess.DEVNULL,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+            )
+        # The visualiser keeps the bank red until the coordinator dispatches to it again.
+        FAULT_STATE.write_text(json.dumps({"bank": bank, "unix_time": time.time()}))
+    return {"status": "terminating", "bank": bank, "pid": _fault_process.pid}
+
+
+def _read_fault_log():
+    try:
+        return FAULT_LOG.read_text(encoding="utf-8", errors="replace")[-4_000:]
+    except FileNotFoundError:
+        return ""
 
 
 def _kubectl(*args):
@@ -265,6 +394,7 @@ def _kubernetes():
                     "role": metadata.get("labels", {}).get(role, role),
                     "phase": status.get("phase", "Unknown"),
                     "ready": ready,
+                    "terminating": bool(metadata.get("deletionTimestamp")),
                     "restarts": sum(c.get("restartCount", 0) for c in containers),
                     "node": item.get("spec", {}).get("nodeName", "—"),
                     "issues": issues,
@@ -696,6 +826,8 @@ def dashboard_data(selected_run=None):
         "active": active,
         "fault": {**_fault_status(latest), "available": demo_active and kubernetes.get("available", False)},
         "training_log": _read_training_log(),
+        "fault_log": _read_fault_log(),
+        "fault": _read_json(FAULT_STATE),
         "runs": runs,
         "run": run,
         "kubernetes": kubernetes,
@@ -768,12 +900,21 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def do_POST(self):
+<<<<<<< Updated upstream
         endpoint = urlsplit(self.path).path
         if endpoint not in {"/api/train", "/api/fail"}:
             self.send_error(404)
             return
         if not _valid_dashboard_origin(self):
             self.send_error(403, "Dashboard actions must come from this local dashboard.")
+=======
+        route = urlsplit(self.path).path
+        if route not in ("/api/train", "/api/fail"):
+            self.send_error(404)
+            return
+        if not _valid_dashboard_origin(self):
+            self.send_error(403, "Dashboard requests must come from this local dashboard.")
+>>>>>>> Stashed changes
             return
         if self.headers.get_content_type() != "application/json":
             self.send_error(415, "Expected application/json.")
@@ -785,7 +926,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(length))
             if not isinstance(body, dict):
                 raise ValueError("Expected a JSON object.")
+<<<<<<< Updated upstream
             if endpoint == "/api/train":
+=======
+            if route == "/api/fail":
+                result = launch_fault(body.get("bank"))
+            else:
+>>>>>>> Stashed changes
                 rounds = body.get("rounds")
                 deadline = body.get("deadline")
                 if (
@@ -795,10 +942,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 ):
                     raise ValueError("Rounds must be an integer and deadline must be a number.")
                 result = launch_training(rounds, deadline)
+<<<<<<< Updated upstream
                 status = 202
             else:
                 result = simulate_self_healing(body.get("bank"))
                 status = 200
+=======
+>>>>>>> Stashed changes
             payload = json.dumps(result).encode("utf-8")
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             payload = json.dumps({"error": str(exc)}).encode("utf-8")
@@ -826,11 +976,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
         print(f"dashboard: {format % args}")
 
 
-def serve(port=8765):
+def serve(port=8765, open_browser=True):
     if not 1 <= port <= 65535:
         raise ValueError("dashboard port must be between 1 and 65535")
     server = ThreadingHTTPServer(("127.0.0.1", port), DashboardHandler)
-    print(f"Dashboard available at http://127.0.0.1:{port} (Ctrl+C to stop)", flush=True)
+    url = f"http://127.0.0.1:{port}"
+    print(f"Dashboard available at {url} (Ctrl+C to stop)", flush=True)
+    if open_browser:
+        webbrowser.open(url)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

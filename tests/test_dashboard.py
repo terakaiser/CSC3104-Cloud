@@ -337,6 +337,7 @@ def test_dashboard_training_endpoint_validates_origin_and_launches(monkeypatch):
         server.server_close()
 
 
+<<<<<<< Updated upstream
 def test_dashboard_failure_endpoint_accepts_local_simulation(monkeypatch):
     calls = []
     expected = {
@@ -351,11 +352,58 @@ def test_dashboard_failure_endpoint_accepts_local_simulation(monkeypatch):
         dashboard,
         "simulate_self_healing",
         lambda bank: calls.append(bank) or expected,
+=======
+def test_launch_fault_requires_active_training_and_valid_bank(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(demo, "active", lambda: False)
+    with pytest.raises(ValueError, match="Bank must be one of"):
+        dashboard.launch_fault("bank-9")
+    with pytest.raises(RuntimeError, match="Start training"):
+        dashboard.launch_fault("bank-3")
+
+
+def test_launch_fault_runs_demo_fail_once_in_background(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    demo.ROOT.mkdir()
+    monkeypatch.setattr(demo, "active", lambda: True)
+    monkeypatch.setattr(dashboard, "_fault_process", None)
+    calls = []
+
+    class Process:
+        pid = 99
+
+        def poll(self):
+            return None
+
+    monkeypatch.setattr(
+        dashboard.subprocess,
+        "Popen",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or Process(),
+    )
+
+    assert dashboard.launch_fault("bank-2") == {
+        "status": "terminating",
+        "bank": "bank-2",
+        "pid": 99,
+    }
+    assert calls[0][0][0][2:] == ["app.cli", "demo", "fail", "--bank", "bank-2"]
+    assert calls[0][1]["stdout"].name.endswith("dashboard-fault.log")
+    assert json.loads(dashboard.FAULT_STATE.read_text())["bank"] == "bank-2"
+    with pytest.raises(RuntimeError, match="already in progress"):
+        dashboard.launch_fault("bank-3")
+
+
+def test_dashboard_fail_endpoint_launches_fault(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        dashboard, "launch_fault", lambda bank: calls.append(bank) or {"bank": bank}
+>>>>>>> Stashed changes
     )
     server = dashboard.ThreadingHTTPServer(("127.0.0.1", 0), dashboard.DashboardHandler)
     thread = threading.Thread(target=server.serve_forever)
     thread.start()
     base = f"http://127.0.0.1:{server.server_port}"
+<<<<<<< Updated upstream
     request = Request(
         f"{base}/api/fail",
         data=json.dumps({"bank": "bank-3"}).encode(),
@@ -366,6 +414,17 @@ def test_dashboard_failure_endpoint_accepts_local_simulation(monkeypatch):
         with urlopen(request) as response:
             assert response.status == 200
             assert json.loads(response.read()) == expected
+=======
+    try:
+        request = Request(
+            f"{base}/api/fail",
+            data=json.dumps({"bank": "bank-3"}).encode(),
+            headers={"Content-Type": "application/json", "Origin": base},
+            method="POST",
+        )
+        with urlopen(request) as response:
+            assert response.status == 202
+>>>>>>> Stashed changes
         assert calls == ["bank-3"]
     finally:
         server.shutdown()
