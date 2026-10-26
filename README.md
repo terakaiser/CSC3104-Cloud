@@ -43,15 +43,20 @@ the Kubernetes cluster. If the download is blocked, download `creditcard.csv`
 from the [Kaggle dataset page](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud),
 put it in `data\raw`, and run setup again.
 
-**Terminal 1** starts training:
+Then open the dashboard. This is the only terminal you need:
 ```powershell
-uv run bank-fl demo start
+uv run bank-fl demo dashboard
 ```
-**Terminal 2**, after a few rounds, kills bank 3's pod:
-```powershell
-uv run bank-fl demo fail
-```
-What happens: **bank fails → training continues → bank rejoins.**
+It opens <http://127.0.0.1:8765> in your browser. In **Live monitor**:
+1. Click **Start training**.
+2. After a few rounds commit, click **Kill bank pod** (bank 3 by default).
+3. Watch the Pods table and training progress: **bank fails → training
+   continues → bank rejoins.**
+4. Open **Results** after training finishes.
+
+Keep the dashboard command running while you use it. Without the dashboard, run
+`uv run bank-fl demo start` in one terminal and `uv run bank-fl demo fail` in a
+second terminal.
 
 Other demo commands:
 ```powershell
