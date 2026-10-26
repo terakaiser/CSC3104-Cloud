@@ -45,7 +45,16 @@ class ScriptedTransport:
         pass
 
 
-def exercise(tmp_path, monkeypatch, **config):
+class FlakyTransport(ScriptedTransport):
+    """Bank 3 disappears between 0.1s and 0.2s, like a killed and replaced pod."""
+
+    def online_banks(self):
+        if 0.1 <= self.clock.value < 0.2:
+            return {"bank-1", "bank-2"}
+        return super().online_banks()
+
+
+def exercise(tmp_path, monkeypatch, transport=ScriptedTransport, **config):
     clock = Clock()
     monkeypatch.setattr(
         coordinator, "time", SimpleNamespace(monotonic=clock.monotonic, sleep=clock.sleep)
@@ -60,7 +69,7 @@ def exercise(tmp_path, monkeypatch, **config):
     directory = coordinator.run(
         options,
         manifest,
-        ScriptedTransport(clock, config.get("label") == "one"),
+        transport(clock, config.get("label") == "one"),
         tmp_path,
         "scripted_test",
     )
@@ -77,6 +86,26 @@ def test_early_quorum_stale_rejection_and_rejoin(tmp_path, monkeypatch):
     assert summary["rejections"]["stale"] >= 1
     assert summary["participation"]["bank-3"] > 0
     assert summary["unresolved_requests"] == 0
+
+
+def test_bank_leaving_and_rejoining_is_logged(tmp_path, monkeypatch, capsys):
+    summary, events = exercise(tmp_path, monkeypatch, transport=FlakyTransport)
+    changes = [
+        (e["event"], e["bank"], e.get("rejoined"))
+        for e in events
+        if e["event"] in {"bank_left", "bank_joined"}
+    ]
+    assert changes == [
+        ("bank_joined", "bank-1", False),
+        ("bank_joined", "bank-2", False),
+        ("bank_joined", "bank-3", False),
+        ("bank_left", "bank-3", None),
+        ("bank_joined", "bank-3", True),
+    ]
+    assert summary["status"] == "completed"
+    output = capsys.readouterr().out
+    assert "bank-3 went offline - training continues without it" in output
+    assert "bank-3 is back online" in output
 
 
 def test_below_quorum_is_bounded_and_never_publishes_a_model(tmp_path, monkeypatch):
