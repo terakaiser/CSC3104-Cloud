@@ -47,11 +47,12 @@ Then open the dashboard. This is the only terminal you need:
 ```powershell
 uv run bank-fl demo dashboard
 ```
-It opens <http://127.0.0.1:8765> in your browser. In **Live monitor**:
-1. Click **Start training**.
-2. After a few rounds commit, click **Kill bank pod** (bank 3 by default).
-3. Watch the Pods table and training progress: **bank fails → training
-   continues → bank rejoins.**
+It opens <http://127.0.0.1:8765> in your browser. In **Live Monitor**:
+1. Click **Start Training**.
+2. After a few rounds commit, click **Delete Bank Pod** in **Simulate
+   Self-Healing** (bank 3 by default), then click again to confirm.
+3. Watch the Live Federation banner: **bank fails (red) → training continues →
+   bank rejoins (green).**
 4. Open **Results** after training finishes.
 
 Keep the dashboard command running while you use it. Without the dashboard, run
