@@ -123,6 +123,17 @@ def test_strict_sync_does_not_accept_partial_round(tmp_path, monkeypatch):
     assert all(len(e["accepted"]) == 3 for e in events if e["event"] == "committed")
 
 
+def test_sync_resends_to_a_bank_freed_mid_attempt(tmp_path, monkeypatch):
+    # Bank 3's attempt-1 reply (0.3 s) misses the 0.2 s deadline. Attempt 2 must still be
+    # able to include bank 3, so one slow reply costs synchronous mode one attempt, not two.
+    summary, events = exercise(tmp_path, monkeypatch, mode="synchronous")
+    assert [e["attempt"] for e in events if e["event"] == "deadline"] == [1]
+    assert any(
+        e["event"] == "dispatched" and e["bank"] == "bank-3" and e["attempt"] == 2 for e in events
+    )
+    assert summary["attempts"] == summary["committed_rounds"] + 1
+
+
 def test_timeout_mode_keeps_valid_partial_results_until_deadline(tmp_path, monkeypatch):
     summary, events = exercise(tmp_path, monkeypatch, mode="timeout")
     assert summary["status"] == "completed"
