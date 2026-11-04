@@ -15,6 +15,8 @@ from app.config import RunConfig
         {"rounds": True},
         {"scenario": "slow", "slow_bank": "bank-99"},
         {"learning_rate": -1},
+        {"mu": -0.1},
+        {"mu": float("inf")},
     ],
 )
 def test_invalid_config_fails_before_launch(change):
