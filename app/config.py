@@ -14,6 +14,7 @@ class RunConfig:
     epochs: int = 1
     batch_size: int = 256
     learning_rate: float = 0.01
+    mu: float = 0.0  # FedProx proximal strength; 0 is plain FedAvg
     max_failures: int = 3
     startup_timeout: float = 90.0
     poll_interval: float = 0.05
@@ -48,8 +49,9 @@ class RunConfig:
         for key in ("deadline", "startup_timeout", "poll_interval", "learning_rate"):
             if not math.isfinite(getattr(self, key)) or getattr(self, key) <= 0:
                 raise ValueError(f"{key} must be finite and positive")
-        if self.delay < 0 or not math.isfinite(self.delay):
-            raise ValueError("delay must be finite and non-negative")
+        for key in ("delay", "mu"):
+            if getattr(self, key) < 0 or not math.isfinite(getattr(self, key)):
+                raise ValueError(f"{key} must be finite and non-negative")
         if self.scenario not in {"healthy", "slow", "stale", "unavailable"}:
             raise ValueError("unknown training scenario")
         if self.scenario != "healthy" and self.slow_bank not in self.bank_ids:

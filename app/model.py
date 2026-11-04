@@ -30,9 +30,10 @@ def load_model(weights: Weights) -> FraudModel:
     return model
 
 
-def train(weights, x, y, *, epochs, batch_size, learning_rate, pos_weight, seed, expires):
+def train(weights, x, y, *, epochs, batch_size, learning_rate, pos_weight, seed, expires, mu=0.0):
     model = load_model(weights)
     model.train()
+    global_params = [p.detach().clone() for p in model.parameters()]
     optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
     loss_fn = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([pos_weight], dtype=torch.float32))
     features = torch.from_numpy(x)
@@ -48,7 +49,15 @@ def train(weights, x, y, *, epochs, batch_size, learning_rate, pos_weight, seed,
             loss = loss_fn(model(features[indices]), targets[indices])
             if not torch.isfinite(loss):
                 raise ValueError("training produced non-finite loss")
-            loss.backward()
+            objective = loss
+            if mu > 0:
+                # FedProx: keep local weights near the global model (Li et al., 2020).
+                drift = sum(
+                    ((p - g) ** 2).sum()
+                    for p, g in zip(model.parameters(), global_params, strict=True)
+                )
+                objective = loss + mu / 2 * drift
+            objective.backward()
             optimizer.step()
             last_loss = float(loss.detach())
     return get_weights(model), last_loss
