@@ -29,6 +29,7 @@ def add_parser(commands):
     start = actions.add_parser("start", help="train, stream progress, and export/evaluate results")
     start.add_argument("--rounds", type=int, default=30)
     start.add_argument("--deadline", type=float, default=30)
+    start.add_argument("--mu", type=float, default=0.0, help="FedProx strength (0 = FedAvg)")
     fail = actions.add_parser("fail", help="replace bank 3's pod during an active demo")
     fail.add_argument("--bank", choices=["bank-1", "bank-2", "bank-3"], default="bank-3")
     dashboard = actions.add_parser(
@@ -209,10 +210,10 @@ def collect():
         raise ValueError("Training did not complete. Inspect the exported summary and event log.")
 
 
-def start(rounds, deadline):
+def start(rounds, deadline, mu=0.0):
     from app.config import RunConfig
 
-    RunConfig(rounds=rounds, deadline=deadline)
+    RunConfig(rounds=rounds, deadline=deadline, mu=mu)
     read("settings.json")
     if active():
         raise ValueError("A demo is already running.")
@@ -278,7 +279,7 @@ def start(rounds, deadline):
                     "demo",
                     "--stream",
                     "--run-config",
-                    f'rounds={rounds} deadline={deadline} label="demo"',
+                    f'rounds={rounds} deadline={deadline} mu={float(mu)} label="demo"',
                 ],
                 env=environment(),
                 stdout=subprocess.PIPE,
@@ -342,7 +343,7 @@ def dispatch(args):
                 raise ValueError("Wait for the active demo to finish before setup.")
             setup(args.synthetic)
         elif args.action == "start":
-            start(args.rounds, args.deadline)
+            start(args.rounds, args.deadline, args.mu)
         elif args.action == "fail":
             fail(args.bank)
         elif args.action == "results":

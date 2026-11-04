@@ -163,6 +163,8 @@ def test_dashboard_http_serves_page_and_json_api(monkeypatch):
         assert 'fetch("/api/fail"' in page
         assert 'id="faultTracker"' in page
         assert "Deleted pod:" in page
+        assert 'id="muInput"' in page
+        assert "FedProx μ=" in page
         assert "Replacement pod:" in page
         assert api == {"selected": "run-1", "alerts": []}
     finally:
@@ -276,12 +278,12 @@ def test_launch_training_runs_demo_command_in_background(tmp_path, monkeypatch):
         lambda *args, **kwargs: calls.append((args, kwargs)) or Process(),
     )
 
-    result = dashboard.launch_training(8, 45.0)
+    result = dashboard.launch_training(8, 45.0, 0.01)
 
     assert result == {"status": "starting", "pid": 4321}
     args, kwargs = calls[0]
     assert args[0][2:5] == ["app.cli", "demo", "start"]
-    assert args[0][-4:] == ["--rounds", "8", "--deadline", "45.0"]
+    assert args[0][-6:] == ["--rounds", "8", "--deadline", "45.0", "--mu", "0.01"]
     assert kwargs["stdout"].name.endswith("dashboard-training.log")
     assert json.loads(dashboard.TRAINING_STATE.read_text()) == {"pid": 4321, "created": 12.5}
 
@@ -296,14 +298,14 @@ def test_dashboard_training_endpoint_validates_origin_and_launches(monkeypatch):
     monkeypatch.setattr(
         dashboard,
         "launch_training",
-        lambda rounds, deadline: calls.append((rounds, deadline))
+        lambda rounds, deadline, mu: calls.append((rounds, deadline, mu))
         or {"status": "starting", "pid": 42},
     )
     server = dashboard.ThreadingHTTPServer(("127.0.0.1", 0), dashboard.DashboardHandler)
     thread = threading.Thread(target=server.serve_forever)
     thread.start()
     base = f"http://127.0.0.1:{server.server_port}"
-    payload = json.dumps({"rounds": 5, "deadline": 40}).encode()
+    payload = json.dumps({"rounds": 5, "deadline": 40, "mu": 0.01}).encode()
     try:
         request = Request(
             f"{base}/api/train",
@@ -332,7 +334,19 @@ def test_dashboard_training_endpoint_validates_origin_and_launches(monkeypatch):
             assert error.code == 403
         else:
             raise AssertionError("Cross-origin training request should be rejected.")
-        assert calls == [(5, 40)]
+        request = Request(
+            f"{base}/api/train",
+            data=json.dumps({"rounds": 5, "deadline": 40, "mu": "0.1"}).encode(),
+            headers={"Content-Type": "application/json", "Origin": base},
+            method="POST",
+        )
+        try:
+            urlopen(request)
+        except HTTPError as error:
+            assert error.code == 400
+        else:
+            raise AssertionError("A non-numeric mu should be rejected.")
+        assert calls == [(5, 40, 0.01)]
     finally:
         server.shutdown()
         thread.join()
