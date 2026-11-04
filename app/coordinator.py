@@ -115,9 +115,10 @@ def run(config: RunConfig, manifest: dict, transport: Transport, output: Path, r
                             required=config.required,
                         )
                         break
-                    # Dispatch once at the round boundary. A returning bank waits for the
-                    # next attempt rather than repeatedly chasing an almost-finished quorum.
-                    if not dispatched:
+                    # Quorum modes dispatch once at the round boundary, so a returning bank
+                    # waits rather than chasing an almost-finished quorum. Synchronous mode
+                    # needs every bank, so it also sends to a bank whose old request clears.
+                    if not dispatched or config.mode == "synchronous":
                         dispatched = True
                         for bank in sorted(transport.online_banks()):
                             if (
