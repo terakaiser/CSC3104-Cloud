@@ -44,6 +44,7 @@ seed = 42
 epochs = 1
 batch-size = 256
 learning-rate = 0.01
+mu = 0.0
 max-failures = 3
 startup-timeout = 90.0
 scenario = "healthy"
