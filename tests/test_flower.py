@@ -88,3 +88,14 @@ def test_flower_entrypoints_are_loadable():
 
     assert isinstance(client, ClientApp)
     assert isinstance(server, ServerApp)
+
+
+def test_flower_app_config_accepts_every_run_setting():
+    from pathlib import Path
+
+    from flwr.common.config import get_fused_config_from_dir
+
+    # Mirrors experiments/flower_local.py; Flower rejects keys missing from pyproject.toml.
+    values = {k.replace("_", "-"): v for k, v in RunConfig().to_dict().items()}
+    values.pop("poll-interval")
+    get_fused_config_from_dir(Path(__file__).parents[1], values)
