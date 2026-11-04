@@ -23,9 +23,10 @@ def workspace(tmp_path, monkeypatch):
 
 def test_demo_cli_routes_defaults(workspace, monkeypatch):
     calls = []
-    monkeypatch.setattr(demo, "start", lambda rounds, deadline: calls.append((rounds, deadline)))
+    monkeypatch.setattr(demo, "start", lambda *args: calls.append(args))
     main(["demo", "start"])
-    assert calls == [(30, 30)]
+    main(["demo", "start", "--mu", "0.01"])
+    assert calls == [(30, 30, 0.0), (30, 30, 0.01)]
 
 
 def test_demo_dashboard_cli_routes_port(workspace, monkeypatch):
@@ -132,7 +133,11 @@ def test_start_records_exact_run_and_cleans_owned_processes(workspace, monkeypat
 
     children = []
 
+    submitted = []
+
     def popen(args, **kwargs):
+        if args[0] == "flwr":
+            submitted.append(args)
         child = Process(args[0] == "flwr")
         children.append(child)
         return child
@@ -144,7 +149,8 @@ def test_start_records_exact_run_and_cleans_owned_processes(workspace, monkeypat
         with pytest.raises(ValueError, match="submission failed"):
             demo.start(30, 30)
     else:
-        demo.start(30, 30)
+        demo.start(30, 30, 0.01)
+        assert submitted[0][-1] == 'rounds=30 deadline=30 mu=0.01 label="demo"'
     assert collected == ([] if exit_code else [True])
     assert not (demo.ROOT / "active.json").exists()
     assert all(child.poll() is not None for child in children)
