@@ -1,7 +1,9 @@
-# Software defaults only. Freeze a pilot-derived deadline before research runs.
+# Deadline frozen from a 5-round healthy synchronous pilot on the real ULB partitions
+# (local Flower runtime): rounds took 22.1-24.9 s, so 40 s gives 1.6x the slowest round.
+# The slow scenario's 45 s delay still overshoots it, so the straggler is real.
 seeds: [42, 43, 44]
 rounds: 20
-deadline: 30
+deadline: 40
 scenarios:
   healthy:
     scenario: healthy

@@ -19,6 +19,7 @@ def add_run_arguments(parser):
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--learning-rate", type=float, default=0.01)
+    parser.add_argument("--mu", type=float, default=0, help="FedProx strength (0 = FedAvg)")
     parser.add_argument("--max-failures", type=int, default=3)
     parser.add_argument("--startup-timeout", type=float, default=90)
     parser.add_argument(
