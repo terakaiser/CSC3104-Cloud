@@ -33,6 +33,7 @@ def execute(request: Request, data_path: Path) -> Reply:
                 epochs=config.epochs,
                 batch_size=config.batch_size,
                 learning_rate=config.learning_rate,
+                mu=config.mu,
                 pos_weight=request.pos_weight,
                 seed=config.seed + request.attempt * 100 + int(request.bank_id.split("-")[-1]),
                 expires=expires,
