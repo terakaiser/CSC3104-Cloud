@@ -62,6 +62,18 @@ def reply_content(reply: Reply):
     )
 
 
+def decode_metrics(text):
+    """Reject metrics that would crash the coordinator's counters or its strict-JSON event log."""
+    metrics = json.loads(text)
+    if not isinstance(metrics, dict):
+        raise ValueError("metrics must be a JSON object")
+    json.dumps(metrics, allow_nan=False)  # Raises ValueError on NaN or infinity anywhere.
+    examples = metrics.get("processed_examples", 0)
+    if type(examples) is not int or examples < 0:
+        raise ValueError("processed_examples must be a non-negative integer")
+    return metrics
+
+
 def decode_reply(content):
     result = content["result"]
     # Preserve sample type so protocol validation can reject malformed counts.
@@ -73,7 +85,7 @@ def decode_reply(content):
         str(result["request_id"]),
         content["weights"].to_numpy_ndarrays(),
         result["samples"],
-        json.loads(str(result["metrics"])),
+        decode_metrics(str(result["metrics"])),
         str(result["error"]) or None,
     )
 
