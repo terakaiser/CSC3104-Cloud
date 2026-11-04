@@ -31,11 +31,14 @@ One loop owns all coordinator state. Reply validation checks run ID, attempt,
 model version, request ID, bank identity, duplicates, expected sample count, tensor
 shape/dtype and finite values. Only successful aggregation increments the model
 version. In-flight requests remain tracked across attempts. No bank receives a
-second request while an earlier request is outstanding. Dispatch happens once at
-the start of an attempt. A returning bank waits for the next attempt, preventing
-it from repeatedly starting late and chasing a nearly completed quorum. This does
-not guarantee equal participation: consistently slower banks can still be
-underrepresented and participation counts must be reported.
+second request while an earlier request is outstanding. In the resilient and
+timeout modes, dispatch happens once at the start of an attempt. A returning bank
+waits for the next attempt, preventing it from repeatedly starting late and
+chasing a nearly completed quorum. This does not guarantee equal participation:
+consistently slower banks can still be underrepresented and participation counts
+must be reported. Synchronous mode needs every bank, so it also dispatches during
+an attempt to a bank whose earlier request has just cleared. One slow reply
+therefore costs the synchronous baseline one failed attempt, not two.
 
 The deadline is measured at coordinator receipt time. Replies observed at or
 after the deadline are late. All replies in a collected batch are processed
