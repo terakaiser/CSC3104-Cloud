@@ -106,7 +106,7 @@ td,th{padding:10px 10px;border-bottom:1px solid var(--border);vertical-align:top
 <section class="card hero" aria-labelledby="hxHeading"><div class="hero-head"><h2 id="hxHeading">Live Federation</h2><div class="hero-title" id="hxTitle" aria-live="polite">Connecting…</div></div>
 <p class="story" id="hxStory">Each bank trains on its own data and sends only model updates to the coordinator.</p>
 <div class="fed"><div class="banks" id="hxBanks"></div><div class="lanes" id="hxLanes" aria-hidden="true"></div>
-<div class="coord core-idle" id="hxCenter"><div class="coord-head"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01"/></svg>Coordinator <small>FedAvg</small></div>
+<div class="coord core-idle" id="hxCenter"><div class="coord-head"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01"/></svg>Coordinator <small id="hxAlgo">FedAvg</small></div>
 <div class="ringwrap"><svg viewBox="0 0 120 120" aria-hidden="true"><circle class="ring-bg" cx="60" cy="60" r="52"/><circle class="ring-fg" id="hxRing" cx="60" cy="60" r="52" stroke-dasharray="326.73" stroke-dashoffset="326.73"/></svg>
 <div class="ring-txt"><small>Global model</small><b id="hxVer">v0</b><span id="hxRound">No rounds yet</span></div></div>
 <div class="quorum"><div class="q-label"><span id="hxQLabel">Updates per round</span><span id="hxQNeed">quorum 2 of 3</span></div><div class="slots" id="hxSlots"></div></div></div></div></section>
@@ -115,6 +115,7 @@ td,th{padding:10px 10px;border-bottom:1px solid var(--border);vertical-align:top
 <section class="grid cols" style="margin-bottom:16px"><article class="card"><h2>Start a Training Run <span class="pill" id="trainState">Ready</span></h2>
 <form id="trainForm" class="controls"><label>Training rounds<input id="roundInput" name="rounds" type="number" inputmode="numeric" autocomplete="off" min="1" max="1000" value="30" required></label>
 <label>Attempt deadline (seconds)<input id="deadlineInput" name="deadline" type="number" inputmode="decimal" autocomplete="off" min="0.001" step="any" value="30" required></label>
+<label>FedProx μ (0 = FedAvg)<input id="muInput" name="mu" type="number" inputmode="decimal" autocomplete="off" min="0" step="any" value="0" required></label>
 <button class="primary" id="startTraining" type="submit">Start Training</button></form>
 <div class="notice" id="trainMessage" aria-live="polite">Training runs on the prepared Kubernetes demo cluster. Results appear in the Results tab after export and evaluation.</div></article>
 <article class="card"><h2>Simulate Self-Healing</h2>
@@ -177,7 +178,7 @@ hero(d);const fault=d.fault||{},record=fault.record;el("simulateFailure").disabl
 renderRun(d);el("podLogs").textContent=d.kubernetes?.logs||d.kubernetes?.logs_error||"No pod logs available."}
 let busy=false,refreshQueued=false,selectionVersion=0;async function refresh(){if(busy){refreshQueued=true;return}busy=true;const version=selectionVersion;try{const q=el("runSelect").value;const r=await fetch("/api/dashboard"+(q?"?run="+encodeURIComponent(q):""),{cache:"no-store"});const d=await r.json();if(!r.ok)throw new Error(d.error||"Dashboard refresh failed");if(version===selectionVersion)render(d)}catch(e){if(version===selectionVersion)el("updated").textContent="Dashboard update failed: "+e.message}finally{busy=false;if(refreshQueued){refreshQueued=false;refresh()}}}
 document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>setTab(b.dataset.tab)));el("runSelect").addEventListener("change",()=>{selectionVersion++;refresh()});
-el("trainForm").addEventListener("submit",async event=>{event.preventDefault();const button=el("startTraining");button.disabled=true;selectionVersion++;el("runSelect").value="";render({...window.lastData,active:true,runs:[],run:{run_id:null,summary:{},evaluation:{},rounds:[],events:[],config:{},latest_attempt:0}});el("trainMessage").textContent="Starting the Kubernetes training run…";try{const response=await fetch("/api/train",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({rounds:Number(el("roundInput").value),deadline:Number(el("deadlineInput").value)})});const result=await response.json();if(!response.ok)throw new Error(result.error||"Unable to start training");el("trainMessage").textContent=`Training started (process ${result.pid}). Live progress will appear here.`;await refresh()}catch(error){el("trainMessage").textContent=error.message;button.disabled=false;await refresh()}});
+el("trainForm").addEventListener("submit",async event=>{event.preventDefault();const button=el("startTraining");button.disabled=true;selectionVersion++;el("runSelect").value="";render({...window.lastData,active:true,runs:[],run:{run_id:null,summary:{},evaluation:{},rounds:[],events:[],config:{},latest_attempt:0}});el("trainMessage").textContent="Starting the Kubernetes training run…";try{const response=await fetch("/api/train",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({rounds:Number(el("roundInput").value),deadline:Number(el("deadlineInput").value),mu:Number(el("muInput").value)})});const result=await response.json();if(!response.ok)throw new Error(result.error||"Unable to start training");el("trainMessage").textContent=`Training started (process ${result.pid}). Live progress will appear here.`;await refresh()}catch(error){el("trainMessage").textContent=error.message;button.disabled=false;await refresh()}});
 // Deleting a pod is destructive: the first click arms the button, a second click within 4 s confirms.
 let disarm;el("faultForm").addEventListener("submit",async event=>{event.preventDefault();const button=el("simulateFailure");
 if(!button.classList.contains("armed")){button.classList.add("armed");button.textContent=`Confirm: Delete ${el("faultBank").value}`;clearTimeout(disarm);disarm=setTimeout(()=>{button.classList.remove("armed");button.textContent="Delete Bank Pod"},4000);return}
@@ -214,7 +215,7 @@ card.querySelector(".hx-data").textContent=n?`${new Intl.NumberFormat().format(n
 for(let v=1;v<=Math.min(Math.max(total,version),120);v++)cells.push(`<i class="${byVersion[v]?(byVersion[v].has(b)?"on":"off"):""}"></i>`);card.querySelector(".strip").innerHTML=cells.join("");
 card.querySelector(".hx-used").textContent=version?`Used in ${used} of ${version} rounds`:"No rounds yet";card.querySelector(".hx-pct").textContent=version?Math.round(used/version*100)+"%":"";
 el("hxlane-"+b).setAttribute("class","lane s-"+s)}
-const center=el("hxCenter"),round=Math.min(version+1,total||version+1);center.className="coord "+(k8s&&!up("coordinator")?"core-down":act?"core-live":"core-idle")+(center.classList.contains("pulse")?" pulse":"");
+el("hxAlgo").textContent=cfg.mu>0?`FedProx μ=${cfg.mu}`:"FedAvg";const center=el("hxCenter"),round=Math.min(version+1,total||version+1);center.className="coord "+(k8s&&!up("coordinator")?"core-down":act?"core-live":"core-idle")+(center.classList.contains("pulse")?" pulse":"");
 el("hxRing").style.strokeDashoffset=326.73*(1-(total?Math.min(1,version/total):0));el("hxVer").textContent="v"+version;el("hxRound").textContent=total?`${version} of ${total} rounds`:"No rounds yet";
 // Rounds commit almost as soon as the quorum arrives, so between arrivals show what the last round used.
 const live_=act&&sent.length,got=live_?sent:[...(byVersion[version]||[])].sort();el("hxQLabel").textContent=live_?`Round ${round} updates`:version?`Round ${version} averaged`:"Updates per round";el("hxQNeed").textContent=`quorum ${needed} of ${nb}`;el("hxSlots").innerHTML=Array.from({length:nb},(_,i)=>got[i]?`<span class="slot on">${bankName(got[i])}</span>`:`<span class="slot">${i<needed?"needed":"optional"}</span>`).join("");
@@ -255,10 +256,10 @@ def _training_active():
     return demo.active() or _dashboard_process_active()
 
 
-def launch_training(rounds, deadline):
+def launch_training(rounds, deadline, mu=0.0):
     from app.config import RunConfig
 
-    config = RunConfig(rounds=rounds, deadline=deadline)
+    config = RunConfig(rounds=rounds, deadline=deadline, mu=mu)
     if not (demo.ROOT / "settings.json").is_file():
         raise ValueError("Run `uv run bank-fl demo setup` before starting training.")
     with TRAINING_LOCK:
@@ -277,6 +278,8 @@ def launch_training(rounds, deadline):
                     str(config.rounds),
                     "--deadline",
                     str(config.deadline),
+                    "--mu",
+                    str(config.mu),
                 ],
                 env=demo.environment(),
                 stdin=subprocess.DEVNULL,
@@ -892,13 +895,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if endpoint == "/api/train":
                 rounds = body.get("rounds")
                 deadline = body.get("deadline")
-                if (
-                    type(rounds) is not int
-                    or isinstance(deadline, bool)
-                    or not isinstance(deadline, (int, float))
+                mu = body.get("mu", 0.0)
+                if type(rounds) is not int or any(
+                    isinstance(value, bool) or not isinstance(value, (int, float))
+                    for value in (deadline, mu)
                 ):
-                    raise ValueError("Rounds must be an integer and deadline must be a number.")
-                result = launch_training(rounds, deadline)
+                    raise ValueError("Rounds must be an integer; deadline and mu must be numbers.")
+                result = launch_training(rounds, deadline, mu)
                 status = 202
             else:
                 result = simulate_self_healing(body.get("bank"))
