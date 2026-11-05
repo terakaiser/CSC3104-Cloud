@@ -7,6 +7,7 @@ from urllib.request import Request, urlopen
 import pytest
 
 from app import dashboard, demo
+from app.config import RunConfig
 
 
 def test_dashboard_without_setup_reports_setup_needed(tmp_path, monkeypatch):
@@ -97,7 +98,7 @@ def test_local_run_results_are_loaded_and_rejections_are_flagged(tmp_path, monke
     run_dir = tmp_path / "results" / "demo" / "20261025-120000" / "run-123"
     run_dir.mkdir(parents=True)
     (run_dir / "run.json").write_text(
-        json.dumps({"config": {"rounds": 3, "mu": 0.1}, "dataset": {"synthetic": False}}),
+        json.dumps({"config": {"rounds": 3, "mu": 1.0}, "dataset": {"synthetic": False}}),
         encoding="utf-8",
     )
     (run_dir / "summary.json").write_text(
@@ -131,7 +132,7 @@ def test_local_run_results_are_loaded_and_rejections_are_flagged(tmp_path, monke
     result = dashboard.dashboard_data()
 
     assert result["run"]["run_id"] == "run-123"
-    assert result["runs"] == [{"id": "run-123", "label": "run-123 · FedProx μ=0.1"}]
+    assert result["runs"] == [{"id": "run-123", "label": "run-123 · FedProx μ=1"}]
     assert result["run"]["summary"]["committed_rounds"] == 1
     assert result["run"]["rounds"][0]["seconds"] == 2.5
     assert any(alert["title"] == "Training replies rejected" for alert in result["alerts"])
@@ -298,12 +299,13 @@ def test_dashboard_training_endpoint_validates_origin_and_launches(monkeypatch):
         "dashboard_data",
         lambda selected: {"selected": selected, "alerts": []},
     )
-    monkeypatch.setattr(
-        dashboard,
-        "launch_training",
-        lambda rounds, deadline, mu: calls.append((rounds, deadline, mu))
-        or {"status": "starting", "pid": 42},
-    )
+
+    def fake_launch(rounds, deadline, mu):
+        RunConfig(rounds=rounds, deadline=deadline, mu=mu)  # validate like the real launch_training
+        calls.append((rounds, deadline, mu))
+        return {"status": "starting", "pid": 42}
+
+    monkeypatch.setattr(dashboard, "launch_training", fake_launch)
     server = dashboard.ThreadingHTTPServer(("127.0.0.1", 0), dashboard.DashboardHandler)
     thread = threading.Thread(target=server.serve_forever)
     thread.start()
@@ -337,18 +339,19 @@ def test_dashboard_training_endpoint_validates_origin_and_launches(monkeypatch):
             assert error.code == 403
         else:
             raise AssertionError("Cross-origin training request should be rejected.")
-        request = Request(
-            f"{base}/api/train",
-            data=json.dumps({"rounds": 5, "deadline": 40, "mu": "0.1"}).encode(),
-            headers={"Content-Type": "application/json", "Origin": base},
-            method="POST",
-        )
-        try:
-            urlopen(request)
-        except HTTPError as error:
-            assert error.code == 400
-        else:
-            raise AssertionError("A non-numeric mu should be rejected.")
+        for bad_mu in ("0.1", 10**400):
+            request = Request(
+                f"{base}/api/train",
+                data=json.dumps({"rounds": 5, "deadline": 40, "mu": bad_mu}).encode(),
+                headers={"Content-Type": "application/json", "Origin": base},
+                method="POST",
+            )
+            try:
+                urlopen(request)
+            except HTTPError as error:
+                assert error.code == 400
+            else:
+                raise AssertionError(f"mu={bad_mu!r} should be rejected.")
         assert calls == [(5, 40, 0.01)]
     finally:
         server.shutdown()
