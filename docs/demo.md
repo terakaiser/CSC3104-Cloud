@@ -38,8 +38,9 @@ between demonstrations. Re-run `uv run bank-fl demo setup` after changing
    then click **Start training**. The dashboard polls in the background every five
    seconds; starting a run clears the previously displayed results, and the new run
    appears automatically. The dashboard shows pod readiness/restarts,
-   deployments, services, recent Kubernetes events, logs, training attempts, and
-   alerts. Kubernetes event timestamps are converted to Singapore Time (SGT),
+   deployments, the latest Kubernetes events, training attempts, and alerts.
+   Services, the raw training event stream and pod logs are under **Show
+   technical details**. Kubernetes event timestamps are converted to Singapore Time (SGT),
    including the date. It binds to loopback.
 3. Explain a successful commit in **Live monitor**. After several commits, choose a
    bank in the dashboard's **Simulate self-healing** card and click **Delete bank

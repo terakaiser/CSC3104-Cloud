@@ -79,9 +79,11 @@ def inject(bank: str, kind: str, duration: float, timeout: float, output: Path):
                     condition["type"] == "Ready" and condition["status"] == "True"
                     for condition in conditions
                 )
-                record["status"] = "ready" if ready else replacement.get("status", {}).get(
-                    "phase", "starting"
-                ).lower()
+                record["status"] = (
+                    "ready"
+                    if ready
+                    else replacement.get("status", {}).get("phase", "starting").lower()
+                )
                 if ready:
                     record["fault_to_ready_seconds"] = time.monotonic() - started
                     save_record()
