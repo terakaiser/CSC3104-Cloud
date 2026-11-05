@@ -19,3 +19,14 @@ def test_each_bank_mounts_only_its_data_and_workloads_have_health_and_limits():
                     "hostPath": {"path": f"/mnt/bank-fl/{name}", "type": "Directory"},
                 }
             ]
+
+
+def test_weekly_retraining_never_overlaps_and_needs_no_data_mounts():
+    (cronjob,) = [r for r in manifests(3) if r["kind"] == "CronJob"]
+    assert cronjob["spec"]["schedule"] == "0 2 * * 0"
+    assert cronjob["spec"]["concurrencyPolicy"] == "Forbid"
+    pod = cronjob["spec"]["jobTemplate"]["spec"]["template"]["spec"]
+    assert pod["restartPolicy"] == "Never"
+    assert pod["automountServiceAccountToken"] is False
+    assert "volumes" not in pod
+    assert pod["containers"][0]["command"][:3] == ["python", "-m", "app.scheduled"]

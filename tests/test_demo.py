@@ -92,15 +92,13 @@ def test_bundle_contains_code_not_training_data(workspace):
 def test_start_records_exact_run_and_cleans_owned_processes(workspace, monkeypatch, exit_code):
     monkeypatch.setattr(demo, "active", lambda: False)
     monkeypatch.setattr(demo, "stage_bundle", lambda output: output / "package")
-    monkeypatch.setattr(
-        demo,
-        "kubectl",
-        lambda *args, **kwargs: json.dumps(
-            {
-                "items": [{"metadata": {"name": "coordinator-demo"}}],
-            }
-        ),
-    )
+    kubectl_calls = []
+
+    def kubectl(*args, **kwargs):
+        kubectl_calls.append(args)
+        return json.dumps({"items": [{"metadata": {"name": "coordinator-demo"}}]})
+
+    monkeypatch.setattr(demo, "kubectl", kubectl)
 
     class Socket:
         def __enter__(self):
@@ -152,6 +150,10 @@ def test_start_records_exact_run_and_cleans_owned_processes(workspace, monkeypat
         demo.start(30, 30, 0.01)
         assert submitted[0][-1] == 'rounds=30 deadline=30 mu=0.01 label="demo"'
     assert collected == ([] if exit_code else [True])
+    # Waiting on every pod would hang on finished CronJob pods, which are never Ready.
+    (wait,) = [call for call in kubectl_calls if call[0] == "wait"]
+    assert "--all" not in wait
+    assert "app in (coordinator,bank-1,bank-2,bank-3)" in wait
     assert not (demo.ROOT / "active.json").exists()
     assert all(child.poll() is not None for child in children)
     assert demo.read("latest.json")["run_id"] == "20261022-demo"

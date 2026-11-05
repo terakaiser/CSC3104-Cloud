@@ -42,6 +42,11 @@ def test_kubernetes_snapshot_summarizes_workloads_and_logs(monkeypatch):
                 "spec": {"nodeName": "kind-control-plane"},
             },
             {
+                "kind": "Pod",
+                "metadata": {"name": "scheduled-run-xyz", "labels": {"app": "scheduled-training"}},
+                "status": {"phase": "Succeeded", "containerStatuses": [{"ready": False}]},
+            },
+            {
                 "kind": "Deployment",
                 "metadata": {"name": "bank-1"},
                 "spec": {
@@ -76,6 +81,7 @@ def test_kubernetes_snapshot_summarizes_workloads_and_logs(monkeypatch):
     monkeypatch.setattr(dashboard, "_kubectl", kubectl)
     result = dashboard._kubernetes()
 
+    assert [pod["name"] for pod in result["pods"]] == ["bank-1-abc"]  # finished job pod hidden
     assert result["pods"][0]["ready"]
     assert result["pods"][0]["restarts"] == 1
     assert result["deployments"][0]["images"] == ["bank-fl:demo"]

@@ -72,6 +72,14 @@ uv run bank-fl predict <results-folder> --fraud    # a real fraud payment
 uv run bank-fl predict <results-folder> --normal   # a normal payment
 ```
 
+The cluster also retrains on its own every Sunday at 02:00 (Singapore time)
+through a Kubernetes CronJob. To start one scheduled run now and follow it:
+```powershell
+kubectl --kubeconfig .demo/kubeconfig --context kind-bank-fl-demo -n bank-fl create job --from=cronjob/scheduled-training retrain-now
+kubectl --kubeconfig .demo/kubeconfig --context kind-bank-fl-demo -n bank-fl logs -f job/retrain-now
+```
+Don't start a dashboard or `demo start` run while a scheduled run is training.
+
 ## 4. Results
 Each demo run creates a folder under `results\demo`:
 

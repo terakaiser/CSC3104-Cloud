@@ -332,3 +332,54 @@ spec:
         hostPath:
           path: /mnt/bank-fl/bank-3
           type: Directory
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: scheduled-training
+  namespace: bank-fl
+spec:
+  schedule: 0 2 * * 0
+  timeZone: Asia/Singapore
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 3600
+      template:
+        metadata:
+          labels:
+            app: scheduled-training
+            project: bank-fl
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+          containers:
+          - name: scheduled-training
+            image: bank-fl:0.1.0
+            imagePullPolicy: IfNotPresent
+            command:
+            - python
+            - -m
+            - app.scheduled
+            - --rounds
+            - '20'
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                - ALL
+            resources:
+              requests:
+                cpu: 100m
+                memory: 128Mi
+              limits:
+                cpu: 500m
+                memory: 512Mi

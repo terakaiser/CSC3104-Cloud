@@ -54,6 +54,31 @@ class FlakyTransport(ScriptedTransport):
         return super().online_banks()
 
 
+class SlightlyLateTransport(ScriptedTransport):
+    """Bank 3 always replies a moment after the other two, as seen in real runs."""
+
+    def submit(self, request):
+        delay = 0.06 if request.bank_id == "bank-3" else 0.01
+        self.pending.append((self.clock.value + delay, request))
+        return True
+
+
+class LateJoinTransport(SlightlyLateTransport):
+    """Bank 3 connects 0.05 s after the other two, as seen when the pods start."""
+
+    def online_banks(self):
+        if self.clock.value < 0.05:
+            return {"bank-1", "bank-2"}
+        return super().online_banks()
+
+
+class TwoBankTransport(ScriptedTransport):
+    """Bank 3 is offline for the whole run, so it is never sent work."""
+
+    def online_banks(self):
+        return {"bank-1", "bank-2"}
+
+
 def exercise(tmp_path, monkeypatch, transport=ScriptedTransport, **config):
     clock = Clock()
     monkeypatch.setattr(
@@ -76,6 +101,39 @@ def exercise(tmp_path, monkeypatch, transport=ScriptedTransport, **config):
     summary = json.loads((directory / "summary.json").read_text())
     events = [json.loads(line) for line in (directory / "events.jsonl").read_text().splitlines()]
     return summary, events
+
+
+def test_grace_window_lets_a_slightly_late_bank_join(tmp_path, monkeypatch):
+    summary, events = exercise(tmp_path, monkeypatch, transport=SlightlyLateTransport, grace=0.1)
+    commits = [e for e in events if e["event"] == "committed"]
+    assert all(e["accepted"] == ["bank-1", "bank-2", "bank-3"] for e in commits)
+    assert summary["rejections"].get("stale", 0) == 0
+    assert all(e["seconds_after_quorum"] <= 0.1 for e in commits)
+
+
+def test_zero_grace_closes_on_the_first_quorum(tmp_path, monkeypatch):
+    summary, events = exercise(tmp_path, monkeypatch, transport=SlightlyLateTransport, grace=0.0)
+    first = next(e for e in events if e["event"] == "committed")
+    assert first["accepted"] == ["bank-1", "bank-2"]
+    assert summary["rejections"]["stale"] >= 1
+
+
+def test_grace_window_never_waits_for_a_bank_that_was_not_sent_work(tmp_path, monkeypatch):
+    summary, events = exercise(tmp_path, monkeypatch, transport=TwoBankTransport, grace=0.15)
+    assert summary["status"] == "completed"
+    assert all(e["seconds_after_quorum"] == 0 for e in events if e["event"] == "committed")
+
+
+def test_round_one_waits_briefly_for_a_bank_that_connects_late(tmp_path, monkeypatch):
+    _, events = exercise(tmp_path, monkeypatch, transport=LateJoinTransport, grace=0.1)
+    first = next(e for e in events if e["event"] == "committed")
+    assert first["accepted"] == ["bank-1", "bank-2", "bank-3"]
+
+
+def test_zero_grace_starts_round_one_with_the_quorum(tmp_path, monkeypatch):
+    _, events = exercise(tmp_path, monkeypatch, transport=LateJoinTransport, grace=0.0)
+    first = next(e for e in events if e["event"] == "committed")
+    assert first["accepted"] == ["bank-1", "bank-2"]
 
 
 def test_early_quorum_stale_rejection_and_rejoin(tmp_path, monkeypatch):

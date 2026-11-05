@@ -19,6 +19,8 @@ ROOT = Path(".demo")
 CLUSTER = "bank-fl-demo"
 IMAGE = "bank-fl:demo"
 PORT = 19093
+# Long-running demo workloads. Finished CronJob pods are never Ready, so waits use these.
+WORKLOADS = ("coordinator", "bank-1", "bank-2", "bank-3")
 
 
 def add_parser(commands):
@@ -166,12 +168,17 @@ def setup(synthetic):
     documents = list(yaml.safe_load_all(Path("k8s/deployment.yaml").read_text()))
     for document in documents:
         if document["kind"] == "Deployment":
-            document["spec"]["template"]["spec"]["containers"][0]["image"] = IMAGE
+            pod = document["spec"]["template"]["spec"]
+        elif document["kind"] == "CronJob":
+            pod = document["spec"]["jobTemplate"]["spec"]["template"]["spec"]
+        else:
+            continue
+        pod["containers"][0]["image"] = IMAGE
     deployment = ROOT / "deployment.yaml"
     deployment.write_text(yaml.safe_dump_all(documents), encoding="utf-8")
     kubectl("apply", "-f", deployment)
     kubectl("rollout", "restart", "deployment")
-    for name in ("coordinator", "bank-1", "bank-2", "bank-3"):
+    for name in WORKLOADS:
         kubectl("rollout", "status", f"deployment/{name}", "--timeout=180s")
     print("Ready. Run: uv run bank-fl demo start", flush=True)
 
@@ -220,7 +227,14 @@ def start(rounds, deadline, mu=0.0):
     # Reserve a non-default control port; never attach to an unrelated listener.
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", PORT))
-    kubectl("wait", "--for=condition=Ready", "pod", "--all", "--timeout=120s")
+    kubectl(
+        "wait",
+        "--for=condition=Ready",
+        "pod",
+        "-l",
+        f"app in ({','.join(WORKLOADS)})",
+        "--timeout=120s",
+    )
     pods = json.loads(kubectl("get", "pods", "-l", "app=coordinator", "-o", "json", capture=True))
     pod = pods["items"][0]["metadata"]["name"]
     output = Path("results/demo") / time.strftime("%Y%m%d-%H%M%S")

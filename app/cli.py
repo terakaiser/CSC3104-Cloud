@@ -15,6 +15,9 @@ def add_run_arguments(parser):
     parser.add_argument("--quorum", type=int, default=2)
     parser.add_argument("--rounds", type=int, default=20)
     parser.add_argument("--deadline", type=float, default=30)
+    parser.add_argument(
+        "--grace", type=float, default=3.0, help="seconds to wait for late banks after quorum"
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--batch-size", type=int, default=256)

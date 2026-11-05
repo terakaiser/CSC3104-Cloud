@@ -10,6 +10,9 @@ class RunConfig:
     quorum: int = 2
     rounds: int = 20
     deadline: float = 30.0
+    # Resilient mode: after the quorum arrives, wait up to this long for the other
+    # dispatched banks before closing the round (0 closes on the first quorum).
+    grace: float = 3.0
     seed: int = 42
     epochs: int = 1
     batch_size: int = 256
@@ -49,7 +52,7 @@ class RunConfig:
         for key in ("deadline", "startup_timeout", "poll_interval", "learning_rate"):
             if not math.isfinite(getattr(self, key)) or getattr(self, key) <= 0:
                 raise ValueError(f"{key} must be finite and positive")
-        for key in ("delay", "mu"):
+        for key in ("delay", "mu", "grace"):
             if getattr(self, key) < 0 or not math.isfinite(getattr(self, key)):
                 raise ValueError(f"{key} must be finite and non-negative")
         if self.scenario not in {"healthy", "slow", "stale", "unavailable"}:

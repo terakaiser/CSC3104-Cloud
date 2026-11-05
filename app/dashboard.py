@@ -226,7 +226,7 @@ el("hxRing").style.strokeDashoffset=326.73*(1-(total?Math.min(1,version/total):0
 const live_=act&&sent.length,got=live_?sent:[...(byVersion[version]||[])].sort();el("hxQLabel").textContent=live_?`Round ${round} updates`:version?`Round ${version} averaged`:"Updates per round";el("hxQNeed").textContent=`quorum ${needed} of ${nb}`;el("hxSlots").innerHTML=Array.from({length:nb},(_,i)=>got[i]?`<span class="slot on">${bankName(got[i])}</span>`:`<span class="slot">${i<needed?"needed":"optional"}</span>`).join("");
 el("hxTitle").textContent=!k8s?"Kubernetes cluster unavailable":starting?"Starting training…":act?`Training · round ${round}${total?" of "+total:""}`:run.summary?.status?`Last run ${run.summary.status.replace(/_/g," ")} · ${version} rounds`:"Ready to train";
 const names=list=>list.length>1?list.slice(0,-1).map(bankName).join(", ")+" and "+bankName(list.at(-1)):bankName(list[0]),tr=BANKS.filter(b=>states[b]==="training"),dn=BANKS.filter(b=>states[b]==="down");
-el("hxStory").textContent=!k8s?"Start Docker Desktop so the dashboard can reach the Kubernetes cluster.":starting?"Starting Flower and connecting the three banks…":act?[tr.length?`${names(tr)} ${tr.length>1?"are":"is"} training on ${tr.length>1?"their":"its"} own data.`:"",dn.length?`${names(dn)} ${dn.length>1?"are":"is"} down, so the other banks carry on without ${dn.length>1?"them":"it"}.`:"",`The coordinator averages the first ${needed} updates it receives, then sends the new global model back to every bank.`].filter(Boolean).join(" "):run.summary?.status?`The last run committed ${version} rounds. Each bank trained only on its own data; only model updates reached the coordinator.`:"Press Start Training. Each bank trains on its own data and sends only model updates to the coordinator, which averages them into one shared model.";
+el("hxStory").textContent=!k8s?"Start Docker Desktop so the dashboard can reach the Kubernetes cluster.":starting?"Starting Flower and connecting the three banks…":act?[tr.length?`${names(tr)} ${tr.length>1?"are":"is"} training on ${tr.length>1?"their":"its"} own data.`:"",dn.length?`${names(dn)} ${dn.length>1?"are":"is"} down, so the other banks carry on without ${dn.length>1?"them":"it"}.`:"",`Once ${needed} updates arrive, the coordinator waits a few seconds for the rest, then averages them and sends the new global model back to every bank.`].filter(Boolean).join(" "):run.summary?.status?`The last run committed ${version} rounds. Each bank trained only on its own data; only model updates reached the coordinator.`:"Press Start Training. Each bank trains on its own data and sends only model updates to the coordinator, which averages them into one shared model.";
 // Animate only events that arrived since the previous refresh; never replay an old run.
 if(hxSeen.run!==run.run_id||ev.length<hxSeen.n){hxSeen.run=run.run_id;hxSeen.n=ev.length;return}
 const fresh=ev.slice(hxSeen.n);hxSeen.n=ev.length;let t=0,arrive=0;
@@ -352,6 +352,8 @@ def _kubernetes():
         name = metadata.get("name", "")
         status = item.get("status", {})
         if kind == "Pod":
+            if status.get("phase") == "Succeeded":
+                continue  # A finished CronJob run, not a workload; failed runs still show.
             containers = status.get("containerStatuses", [])
             ready = bool(containers) and all(c.get("ready", False) for c in containers)
             issues = []

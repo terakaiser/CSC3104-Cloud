@@ -40,6 +40,7 @@ rounds = 20
 quorum = 2
 banks = 3
 deadline = 30.0
+grace = 3.0
 seed = 42
 epochs = 1
 batch-size = 256

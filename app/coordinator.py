@@ -49,6 +49,13 @@ def run(config: RunConfig, manifest: dict, transport: Transport, output: Path, r
                 break
             time.sleep(config.poll_interval)
         else:
+            # Banks connect a moment apart, so give the rest one grace period to join before
+            # round 1 is dispatched. A bank that is really missing delays startup by at most
+            # `grace`, and training still starts with the quorum.
+            settle_until = time.monotonic() + config.grace
+            while len(watch_banks()) < config.banks and time.monotonic() < settle_until:
+                transport.poll()
+                time.sleep(config.poll_interval)
             while version < config.rounds and failures < config.max_failures:
                 attempt += 1
                 current = Round(run_id, attempt, version, weights, counts)
@@ -58,6 +65,7 @@ def run(config: RunConfig, manifest: dict, transport: Transport, output: Path, r
                 logger.event("attempt_started", attempt=attempt, version=version)
                 committed = False
                 dispatched = False
+                quorum_at = None  # when this attempt first had enough valid replies
                 while True:
                     watch_banks()
                     # Poll every reply in the returned batch before deciding to close.
@@ -88,7 +96,23 @@ def run(config: RunConfig, manifest: dict, transport: Transport, output: Path, r
                     now = time.monotonic()
                     enough = len(current.accepted) >= config.required
                     all_banks = len(current.accepted) == config.banks
-                    finish_early = config.mode != "timeout" or all_banks
+                    if enough and quorum_at is None:
+                        quorum_at = now
+                    if config.mode == "resilient":
+                        # Grace window: a bank that is only slightly behind the quorum still
+                        # counts, but the round never waits for a bank that was not sent work
+                        # or already replied, and never past the grace period or deadline.
+                        still_training = any(
+                            outstanding.get(bank) == request_id
+                            for bank, request_id in current.requests.items()
+                        )
+                        finish_early = (
+                            all_banks
+                            or not still_training
+                            or (quorum_at is not None and now >= quorum_at + config.grace)
+                        )
+                    else:
+                        finish_early = config.mode == "synchronous" or all_banks
                     if enough and (finish_early or now >= deadline):
                         weights = current.aggregate(config.required)
                         version += 1
@@ -101,6 +125,7 @@ def run(config: RunConfig, manifest: dict, transport: Transport, output: Path, r
                             attempt=attempt,
                             version=version,
                             accepted=sorted(current.accepted),
+                            seconds_after_quorum=now - quorum_at,
                         )
                         committed = True
                         break

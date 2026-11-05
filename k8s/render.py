@@ -117,7 +117,66 @@ def manifests(banks=3, image="bank-fl:0.1.0", host_data="/mnt/bank-fl"):
                 },
             }
         )
+    documents.append(scheduled_training(namespace, image))
     return documents
+
+
+def scheduled_training(namespace, image, schedule="0 2 * * 0", rounds=20):
+    """Weekly retraining: start a new federated run every Sunday at 02:00 SGT."""
+    return {
+        "apiVersion": "batch/v1",
+        "kind": "CronJob",
+        "metadata": {"name": "scheduled-training", "namespace": namespace},
+        "spec": {
+            "schedule": schedule,
+            "timeZone": "Asia/Singapore",
+            # Never start a run while the previous scheduled run is still training.
+            "concurrencyPolicy": "Forbid",
+            "startingDeadlineSeconds": 600,
+            "successfulJobsHistoryLimit": 3,
+            "failedJobsHistoryLimit": 3,
+            "jobTemplate": {
+                "spec": {
+                    "backoffLimit": 0,  # A failed run is reported, not silently retried.
+                    "activeDeadlineSeconds": 3600,
+                    "template": {
+                        "metadata": {"labels": {"app": "scheduled-training", "project": "bank-fl"}},
+                        "spec": {
+                            "restartPolicy": "Never",
+                            "automountServiceAccountToken": False,
+                            "securityContext": {
+                                "runAsNonRoot": True,
+                                "runAsUser": 10001,
+                                "runAsGroup": 10001,
+                            },
+                            "containers": [
+                                {
+                                    "name": "scheduled-training",
+                                    "image": image,
+                                    "imagePullPolicy": "IfNotPresent",
+                                    "command": [
+                                        "python",
+                                        "-m",
+                                        "app.scheduled",
+                                        "--rounds",
+                                        str(rounds),
+                                    ],
+                                    "securityContext": {
+                                        "allowPrivilegeEscalation": False,
+                                        "capabilities": {"drop": ["ALL"]},
+                                    },
+                                    "resources": {
+                                        "requests": {"cpu": "100m", "memory": "128Mi"},
+                                        "limits": {"cpu": "500m", "memory": "512Mi"},
+                                    },
+                                }
+                            ],
+                        },
+                    },
+                }
+            },
+        },
+    }
 
 
 def main():

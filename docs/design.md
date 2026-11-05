@@ -44,6 +44,23 @@ The deadline is measured at coordinator receipt time. Replies observed at or
 after the deadline are late. All replies in a collected batch are processed
 before early closure, so a healthy round can include all three banks.
 
+Resilient mode adds a short grace window (`grace`, default 3 s). Once the quorum
+is reached, the round stays open until every bank sent work in that attempt has
+replied, the grace window ends, or the deadline passes, whichever is first. It
+never waits for a bank that was offline or not sent work, so a failed bank costs
+at most the grace window per round. Without it, the third bank's update was
+discarded as stale in about half of all rounds, although it typically arrived
+less than a second after the quorum (median 0.8 s, maximum 2.2 s across two
+30-round runs on 26 Oct and 5 Nov). Each commit records `seconds_after_quorum`,
+so the cost of the window can be measured. `grace=0` restores closing on the
+first quorum.
+
+The same window applies once at startup. Training may begin once the quorum of
+banks has connected, but the coordinator first waits up to `grace` for the rest,
+because bank pods connect a moment apart (bank-3 connected 1.5 s after the
+others in the 6 Nov run and missed round 1). A bank that is really missing delays
+startup by at most `grace`.
+
 ## Identity and recovery
 
 An identity query binds a configured bank ID to a Flower runtime node ID.
@@ -60,6 +77,22 @@ global model. Interrupted local training is discarded. Client work has a
 cooperative time budget checked between batches; transport TTL is slightly longer.
 This bounds normal delayed work but does not forcibly interrupt a hung native
 library call. Killing a stuck pod remains the operator's recovery mechanism.
+
+## Scheduled retraining
+
+A `scheduled-training` CronJob starts a new 20-round federated run every Sunday at
+02:00 Singapore time (`app/scheduled.py`). It reaches the coordinator through the
+same Service as the banks, so it needs no port-forward. `concurrencyPolicy: Forbid`
+stops a second scheduled run from starting while one is still training,
+`backoffLimit: 0` reports a failed run instead of retrying it, and a one-hour
+`activeDeadlineSeconds` bounds a stuck run. Results go to the coordinator's
+persistent volume like any other run.
+
+Weekly is a design choice: fraud labels arrive late (chargebacks and
+investigations), so retraining daily adds little newly confirmed fraud. The
+prototype's bank data is fixed; a real deployment would load each bank's latest
+labelled transactions. The CronJob does not coordinate with manually started
+runs, so operators should not start a demo run during a scheduled one.
 
 ## Storage and privacy
 
