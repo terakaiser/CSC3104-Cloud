@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -91,8 +92,6 @@ def test_flower_entrypoints_are_loadable():
 
 
 def test_flower_app_config_accepts_every_run_setting():
-    from pathlib import Path
-
     from flwr.common.config import get_fused_config_from_dir
 
     # Mirrors experiments/flower_local.py; Flower rejects keys missing from pyproject.toml.

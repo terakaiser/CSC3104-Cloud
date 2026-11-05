@@ -215,7 +215,7 @@ card.querySelector(".hx-data").textContent=n?`${new Intl.NumberFormat().format(n
 for(let v=1;v<=Math.min(Math.max(total,version),120);v++)cells.push(`<i class="${byVersion[v]?(byVersion[v].has(b)?"on":"off"):""}"></i>`);card.querySelector(".strip").innerHTML=cells.join("");
 card.querySelector(".hx-used").textContent=version?`Used in ${used} of ${version} rounds`:"No rounds yet";card.querySelector(".hx-pct").textContent=version?Math.round(used/version*100)+"%":"";
 el("hxlane-"+b).setAttribute("class","lane s-"+s)}
-el("hxAlgo").textContent=cfg.mu>0?`FedProx μ=${cfg.mu}`:"FedAvg";const center=el("hxCenter"),round=Math.min(version+1,total||version+1);center.className="coord "+(k8s&&!up("coordinator")?"core-down":act?"core-live":"core-idle")+(center.classList.contains("pulse")?" pulse":"");
+const mu=act&&cfg.mu===undefined?Number(el("muInput").value):cfg.mu;el("hxAlgo").textContent=mu>0?`FedProx μ=${mu}`:"FedAvg";const center=el("hxCenter"),round=Math.min(version+1,total||version+1);center.className="coord "+(k8s&&!up("coordinator")?"core-down":act?"core-live":"core-idle")+(center.classList.contains("pulse")?" pulse":"");
 el("hxRing").style.strokeDashoffset=326.73*(1-(total?Math.min(1,version/total):0));el("hxVer").textContent="v"+version;el("hxRound").textContent=total?`${version} of ${total} rounds`:"No rounds yet";
 // Rounds commit almost as soon as the quorum arrives, so between arrivals show what the last round used.
 const live_=act&&sent.length,got=live_?sent:[...(byVersion[version]||[])].sort();el("hxQLabel").textContent=live_?`Round ${round} updates`:version?`Round ${version} averaged`:"Updates per round";el("hxQNeed").textContent=`quorum ${needed} of ${nb}`;el("hxSlots").innerHTML=Array.from({length:nb},(_,i)=>got[i]?`<span class="slot on">${bankName(got[i])}</span>`:`<span class="slot">${i<needed?"needed":"optional"}</span>`).join("");
@@ -259,12 +259,12 @@ def _training_active():
 def _algorithm(path):
     try:
         mu = json.loads((path / "run.json").read_text(encoding="utf-8"))["config"].get("mu", 0)
-        return f" · FedProx μ={mu}" if mu > 0 else " · FedAvg"
+        return f" · FedProx μ={mu:g}" if mu > 0 else " · FedAvg"
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
         return ""  # live run not exported yet, or an unreadable run.json
 
 
-def launch_training(rounds, deadline, mu=0.0):
+def launch_training(rounds, deadline, mu):
     from app.config import RunConfig
 
     config = RunConfig(rounds=rounds, deadline=deadline, mu=mu)
@@ -915,7 +915,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 result = simulate_self_healing(body.get("bank"))
                 status = 200
             payload = json.dumps(result).encode("utf-8")
-        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+        except (ValueError, TypeError, OverflowError, json.JSONDecodeError) as exc:
             payload = json.dumps({"error": str(exc)}).encode("utf-8")
             status = 400
         except FileExistsError as exc:
