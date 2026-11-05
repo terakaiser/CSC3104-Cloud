@@ -115,7 +115,7 @@ td,th{padding:10px 10px;border-bottom:1px solid var(--border);vertical-align:top
 <section class="grid cols" style="margin-bottom:16px"><article class="card"><h2>Start a Training Run <span class="pill" id="trainState">Ready</span></h2>
 <form id="trainForm" class="controls"><label>Training rounds<input id="roundInput" name="rounds" type="number" inputmode="numeric" autocomplete="off" min="1" max="1000" value="30" required></label>
 <label>Attempt deadline (seconds)<input id="deadlineInput" name="deadline" type="number" inputmode="decimal" autocomplete="off" min="0.001" step="any" value="30" required></label>
-<label>FedProx μ (0 = FedAvg)<input id="muInput" name="mu" type="number" inputmode="decimal" autocomplete="off" min="0" step="any" value="0" required></label>
+<label>Algorithm<select id="muInput" name="mu"><option value="0" selected>FedAvg (μ = 0)</option><option value="0.01">FedProx μ = 0.01 · gentle</option><option value="0.1">FedProx μ = 0.1 · moderate</option><option value="1">FedProx μ = 1 · strong</option></select></label>
 <button class="primary" id="startTraining" type="submit">Start Training</button></form>
 <div class="notice" id="trainMessage" aria-live="polite">Training runs on the prepared Kubernetes demo cluster. Results appear in the Results tab after export and evaluation.</div></article>
 <article class="card"><h2>Simulate Self-Healing</h2>
@@ -254,6 +254,14 @@ def _dashboard_process_active():
 
 def _training_active():
     return demo.active() or _dashboard_process_active()
+
+
+def _algorithm(path):
+    try:
+        mu = json.loads((path / "run.json").read_text(encoding="utf-8"))["config"].get("mu", 0)
+        return f" · FedProx μ={mu}" if mu > 0 else " · FedAvg"
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return ""  # live run not exported yet, or an unreadable run.json
 
 
 def launch_training(rounds, deadline, mu=0.0):
@@ -726,7 +734,7 @@ def dashboard_data(selected_run=None):
     runs = [
         {
             "id": item,
-            "label": f"{item}{' · live' if item == active_id else ''}",
+            "label": f"{item}{_algorithm(run_paths[item])}{' · live' if item == active_id else ''}",
         }
         for item in ordered[:20]
     ]
