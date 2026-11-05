@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import time
 from pathlib import Path
 
 import numpy as np
@@ -13,6 +14,22 @@ FEATURES = [f"V{i}" for i in range(1, 29)] + ["Amount"]
 
 def write_json(path: Path, value):
     path.write_text(json.dumps(value, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+
+
+def replace_file(source: Path, target: Path, attempts=40, wait=0.05):
+    """Atomically move source onto target, retrying for up to about 2 s.
+
+    Windows refuses to replace a file while another process has it open, and the
+    dashboard reads the demo's state and fault files every few seconds. A brief
+    retry turns that collision into a short wait instead of a failed write.
+    """
+    for attempt in range(attempts):
+        try:
+            return source.replace(target)
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(wait)
 
 
 def partition_path(root: Path, split: str, bank: str) -> Path:

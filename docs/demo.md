@@ -61,7 +61,11 @@ defaults to 30. A deadline should be chosen from a healthy rehearsal on the same
 machine. Do not promise a particular round or recovery time.
 
 `demo fail` defaults to bank 3; `--bank bank-1` or `--bank bank-2` selects another
-bank. Only one fault is allowed per run. Keep both commands running until they
+bank. You can kill banks as often as you like during a run, one at a time: the
+next kill is allowed once the previous replacement pod is Ready. Each kill gets
+its own record (`fault-1.json`, `fault-2.json`, …) and its own recovery time in
+`recovery.json`. Kill early (e.g. round 5 of 20) so there is time to see the bank
+rejoin. Keep both commands running until they
 finish. Do not interrupt the presentation just to stop the display: stopping the
 local streaming process does not guarantee cancellation of server-side training.
 

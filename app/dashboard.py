@@ -18,6 +18,7 @@ from urllib.parse import parse_qs, urlsplit
 import psutil
 
 from app import demo
+from app.data import replace_file
 
 RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 ANSI_ESCAPE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|[@-_])")
@@ -122,7 +123,7 @@ td,th{padding:10px 10px;border-bottom:1px solid var(--border);vertical-align:top
 <article class="card"><h2>Simulate Self-Healing</h2>
 <form id="faultForm" class="controls"><label>Bank to fail<select id="faultBank" name="bank"><option>bank-1</option><option>bank-2</option><option selected>bank-3</option></select></label>
 <button class="danger" id="simulateFailure" type="submit" disabled>Delete Bank Pod</button></form>
-<div class="notice" id="faultMessage" aria-live="polite">Start training to enable one bank failure simulation.</div>
+<div class="notice" id="faultMessage" aria-live="polite">Start training to enable bank failure simulations.</div>
 <div id="faultTracker" class="subtle">Deleted pod and replacement details will appear here.</div></article></section>
 <section class="grid stats">
 <article class="card"><div class="label">Kubernetes cluster</div><div class="value" id="cluster">—</div><div class="subtle" id="clusterNote">Checking cluster</div></article>
@@ -179,7 +180,7 @@ el("kubeEvents").innerHTML=(d.kubernetes?.events||[]).slice(0,10).map(e=>row([e.
 el("alerts").innerHTML=d.alerts.length?d.alerts.map(a=>`<div class="alert ${a.level}"><b>${esc(a.title)}</b><div title="${esc(a.message)}">${esc(a.message)}</div></div>`).join(""):'<div class="alert">No issues detected in the latest snapshot.</div>';el("alertCount").textContent=d.alerts.length;
 const run=d.run||{},s=run.summary||{};el("training").textContent=d.active?"RUNNING":s.status||"IDLE";el("trainingNote").textContent=d.active?`${s.committed_rounds||0} committed · attempt ${run.latest_attempt||0}`:`${s.committed_rounds||0} committed rounds`;el("runStatus").textContent=s.status||"—";el("runNote").textContent=s.attempts?`${s.committed_rounds} / ${run.config?.rounds||"?"} rounds · ${fmt(s.successful_round_rate*100,0)}% success rate`:"No summary yet";
 const canStart=d.prepared&&d.kubernetes?.available;el("startTraining").disabled=d.active||!canStart;el("trainState").textContent=d.active?"Training in progress":!d.prepared?"Setup required":!d.kubernetes?.available?"Cluster unavailable":"Ready to train";const logLines=(d.training_log||"").trim().split("\n");const lastLog=logLines[logLines.length-1]||"";el("trainMessage").textContent=d.active?`Run ${run.run_id||"starting"} is active. Follow live progress here; open Results after it finishes.`:s.status?`Latest run: ${s.status}. Open Results to inspect its exported evaluation.`:!d.prepared?"Run `uv run bank-fl demo setup` before starting a training run.":!d.kubernetes?.available?`Kubernetes is unavailable: ${d.kubernetes?.error||"cluster connection failed"}`:lastLog||"Choose rounds and deadline, then start. Training runs through Flower on the Kubernetes demo cluster.";
-hero(d);const fault=d.fault||{},record=fault.record;el("simulateFailure").disabled=!fault.available||fault.requested;el("faultMessage").textContent=record?.status==="ready"?`${record.bank} recovered and became Ready in ${fmt(record.fault_to_ready_seconds,1)} s. Only one simulation is allowed per run.`:record?.status==="timed_out"?"Replacement did not become Ready before the recovery timeout.":record?.status==="failed"?`Failure simulation failed: ${record.error||"unknown error"}`:fault.requested?"Failure injected; tracking pod replacement…":fault.available?"Choose a bank and delete its pod. Kubernetes should create a replacement while training continues.":d.active?"Training is starting; wait for the coordinator before simulating a failure.":"Start training to enable one bank failure simulation.";el("faultTracker").innerHTML=record?`<div>Bank: <b>${esc(record.bank)}</b> · Status: <b>${esc(record.status||"unknown")}</b></div><div>Deleted pod: <code>${esc(record.deleted_pod||"waiting")}</code></div><div>Replacement pod: <code>${esc(record.replacement_pod||"waiting for Kubernetes")}</code></div><div>Replacement UID: <code>${esc(record.replacement_uid||"—")}</code></div>`:"Deleted pod and replacement details will appear here.";
+hero(d);const fault=d.fault||{},record=fault.record;el("simulateFailure").disabled=!fault.available||fault.requested;el("faultMessage").textContent=record?.status==="ready"?`Kill ${fault.count}: ${record.bank} recovered and became Ready in ${fmt(record.fault_to_ready_seconds,1)} s. You can delete another bank pod.`:record?.status==="timed_out"?"Replacement did not become Ready before the recovery timeout.":record?.status==="failed"?`Failure simulation failed: ${record.error||"unknown error"}`:fault.requested?"Failure injected; tracking pod replacement…":fault.available?"Choose a bank and delete its pod. Kubernetes should create a replacement while training continues.":d.active?"Training is starting; wait for the coordinator before simulating a failure.":"Start training to enable bank failure simulations.";el("faultTracker").innerHTML=record?`<div>Kill ${fault.count} · Bank: <b>${esc(record.bank)}</b> · Status: <b>${esc(record.status||"unknown")}</b></div><div>Deleted pod: <code>${esc(record.deleted_pod||"waiting")}</code></div><div>Replacement pod: <code>${esc(record.replacement_pod||"waiting for Kubernetes")}</code></div><div>Replacement UID: <code>${esc(record.replacement_uid||"—")}</code></div>`:"Deleted pod and replacement details will appear here.";
 renderRun(d);el("podLogs").textContent=d.kubernetes?.logs||d.kubernetes?.logs_error||"No pod logs available."}
 let busy=false,refreshQueued=false,selectionVersion=0;async function refresh(){if(busy){refreshQueued=true;return}busy=true;const version=selectionVersion;try{const q=el("runSelect").value;const r=await fetch("/api/dashboard"+(q?"?run="+encodeURIComponent(q):""),{cache:"no-store"});const d=await r.json();if(!r.ok)throw new Error(d.error||"Dashboard refresh failed");if(version===selectionVersion)render(d)}catch(e){if(version===selectionVersion)el("updated").textContent=" · Dashboard update failed: "+e.message}finally{busy=false;if(refreshQueued){refreshQueued=false;refresh()}}}
 document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>setTab(b.dataset.tab)));el("runSelect").addEventListener("change",()=>{selectionVersion++;refresh()});
@@ -240,7 +241,7 @@ if(location.hash==="#results")setTab("results");refresh();setInterval(refresh,20
 def _read_json(path):
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
+    except (FileNotFoundError, json.JSONDecodeError):  # missing, or caught mid-write
         return None
 
 
@@ -310,7 +311,7 @@ def launch_training(rounds, deadline, mu):
         state = {"pid": process.pid, "created": created}
         temporary = TRAINING_STATE.with_suffix(".tmp")
         temporary.write_text(json.dumps(state), encoding="utf-8")
-        temporary.replace(TRAINING_STATE)
+        replace_file(temporary, TRAINING_STATE)
     return {"status": "starting", "pid": process.pid}
 
 
@@ -683,13 +684,11 @@ def simulate_self_healing(bank):
         raise ValueError("bank must be bank-1, bank-2, or bank-3")
     if not demo.active():
         raise RuntimeError("Start a training run before simulating self-healing.")
-    try:
-        demo.fail(bank)
-    except FileExistsError as exc:
-        raise RuntimeError("Only one bank failure simulation is allowed per training run.") from exc
+    demo.fail(bank)  # Raises ValueError while the previous kill is still recovering.
     latest = _read_json(demo.ROOT / "latest.json") or {}
     output = latest.get("output")
-    record = _read_json(Path(output) / "fault.json") if isinstance(output, str) else None
+    records = demo.fault_records(Path(output)) if isinstance(output, str) else []
+    record = _read_json(records[-1]) if records else None
     if record is None:
         raise RuntimeError("Failure simulation finished without writing a recovery record.")
     return {"bank": bank, "record": record}
@@ -831,10 +830,14 @@ def dashboard_data(selected_run=None):
 def _fault_status(latest):
     output = latest.get("output")
     if not isinstance(output, str):
-        return {"requested": False, "record": None}
-    directory = Path(output)
-    record = _read_json(directory / "fault.json")
-    return {"requested": (directory / "fault-requested").exists(), "record": record}
+        return {"requested": False, "record": None, "count": 0}
+    records = demo.fault_records(Path(output))
+    # "requested" means a kill is still in progress, which disables the button until it ends.
+    return {
+        "requested": bool(records) and not demo.fault_finished(records[-1]),
+        "record": _read_json(records[-1]) if records else None,
+        "count": len(records),
+    }
 
 
 def _read_training_log():

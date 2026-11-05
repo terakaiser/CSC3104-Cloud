@@ -14,6 +14,7 @@ import psutil
 import yaml
 
 from app.bundle import stage_bundle
+from app.data import replace_file
 
 ROOT = Path(".demo")
 CLUSTER = "bank-fl-demo"
@@ -21,6 +22,27 @@ IMAGE = "bank-fl:demo"
 PORT = 19093
 # Long-running demo workloads. Finished CronJob pods are never Ready, so waits use these.
 WORKLOADS = ("coordinator", "bank-1", "bank-2", "bank-3")
+# A fault record is final once its replacement pod is Ready, timed out, or the kill failed.
+FINAL_FAULT_STATES = {"ready", "timed_out", "failed"}
+
+
+def fault_records(output: Path):
+    """Every fault record of a run, oldest first. fault.json is the older single-fault name."""
+
+    def number(path):
+        _, _, suffix = path.stem.partition("-")
+        return int(suffix) if suffix.isdigit() else 0
+
+    return sorted(output.glob("fault*.json"), key=number)
+
+
+def fault_finished(path: Path):
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False  # Missing or still being written.
+    # Records written before fault tracking had no status and were always final.
+    return record.get("status", "ready") in FINAL_FAULT_STATES
 
 
 def add_parser(commands):
@@ -74,7 +96,7 @@ def save(name, value):
     target = ROOT / name
     temporary = target.with_suffix(".tmp")
     temporary.write_text(json.dumps(value, indent=2), encoding="utf-8")
-    temporary.replace(target)
+    replace_file(temporary, target)
 
 
 def read(name):
@@ -192,24 +214,26 @@ def collect():
     kubectl("cp", f"{state['pod']}:/results/{state['run_id']}/.", str(directory))
     from experiments.evaluate import evaluate
     from experiments.plot import plot_runs
-    from experiments.recovery import summarize
+    from experiments.recovery import summarize_all
 
     evaluate(directory, Path(read("settings.json")["data"]))
     plot_runs([directory], directory / "figures")
-    fault = Path(state["output"]) / "fault.json"
-    if (fault.parent / "fault-requested").exists() and not fault.exists():
+    faults = fault_records(Path(state["output"]))
+    finished = [path for path in faults if fault_finished(path)]
+    if len(finished) < len(faults):
         print(
             "Fault measurement is still pending. Run 'uv run bank-fl demo results' "
             "after the fail command finishes to include recovery measurements."
         )
-    if fault.exists():
-        recovery = summarize(directory, fault)
-        seconds = recovery["fault_to_accepted_update_seconds"]
-        print(
-            f"Bank contributed again after {seconds:.1f}s."
-            if seconds is not None
-            else "Bank contribution after replacement was not observed; repeat with more rounds."
-        )
+    if finished:
+        for number, recovery in enumerate(summarize_all(directory, finished)["faults"], 1):
+            seconds = recovery["fault_to_accepted_update_seconds"]
+            print(
+                f"Kill {number}: {recovery['bank']} contributed again after {seconds:.1f}s."
+                if seconds is not None
+                else f"Kill {number}: {recovery['bank']} was not seen contributing again "
+                "before training ended or its next kill."
+            )
     summary = json.loads((directory / "summary.json").read_text())
     print(f"Result: {summary['status']} - {summary['committed_rounds']} committed rounds.")
     print(f"Results and charts: {directory}")
@@ -330,22 +354,50 @@ def fail(bank):
         raise ValueError("Start the demo and wait for training commits before triggering a fault.")
     state = read("latest.json")
     output = Path(state["output"])
-    # One deliberate fault per run keeps recovery attribution unambiguous.
-    with (output / "fault-requested").open("x"):
-        pass
-    print(f"Terminating {bank}'s pod. The remaining two banks can keep training.", flush=True)
-    command(
-        sys.executable,
-        "-m",
-        "experiments.fault",
-        "--kind",
-        "kill",
-        "--bank",
-        bank,
-        "--output",
-        output / "fault.json",
-    )
+    records = fault_records(output)
+    # Any number of kills per run, but one at a time, so each recovery time belongs to
+    # exactly one kill.
+    if records and not fault_finished(records[-1]):
+        raise ValueError("Wait for the previous bank pod's replacement to become Ready first.")
+    record = output / f"fault-{len(records) + 1}.json"
+    try:
+        # Reserve the number atomically, so two simultaneous kills cannot share a record.
+        with record.open("x", encoding="utf-8") as stream:
+            json.dump({"bank": bank, "unix_time": time.time(), "status": "starting"}, stream)
+    except FileExistsError as exc:
+        raise ValueError("Another bank failure is being injected right now.") from exc
+    print(f"Terminating {bank}'s pod. The other banks can keep training.", flush=True)
+    try:
+        command(
+            sys.executable,
+            "-m",
+            "experiments.fault",
+            "--kind",
+            "kill",
+            "--bank",
+            bank,
+            "--output",
+            record,
+        )
+    except BaseException as exc:
+        # The injector can fail before writing its own record; never leave the run blocked,
+        # and keep the reason so the dashboard can show more than "unknown error".
+        if not fault_finished(record):
+            record.write_text(
+                json.dumps(
+                    {
+                        "bank": bank,
+                        "unix_time": time.time(),
+                        "status": "failed",
+                        "error": f"{type(exc).__name__}: {exc}. "
+                        "See the dashboard's terminal for the injector's output.",
+                    }
+                ),
+                encoding="utf-8",
+            )
+        raise
     print("Pod replacement check finished. Watch training for the bank's accepted update.")
+    return record
 
 
 def dispatch(args):

@@ -1,7 +1,30 @@
+import threading
+
 import numpy as np
 import pytest
 
-from app.data import pooled, prepare, synthetic_frame
+from app.data import pooled, prepare, replace_file, synthetic_frame
+
+
+def test_replace_waits_while_another_process_reads_the_target(tmp_path):
+    # On Windows a reader's open handle blocks the swap, as the dashboard's polling did.
+    target, temporary = tmp_path / "fault-2.json", tmp_path / "fault-2.json.tmp"
+    target.write_text("old", encoding="utf-8")
+    temporary.write_text("new", encoding="utf-8")
+    reader = target.open(encoding="utf-8")
+    threading.Timer(0.3, reader.close).start()
+    replace_file(temporary, target)
+    assert target.read_text(encoding="utf-8") == "new"
+    assert not temporary.exists()
+
+
+def test_replace_still_raises_if_the_target_stays_locked(tmp_path):
+    class Locked:
+        def replace(self, target):
+            raise PermissionError("locked")
+
+    with pytest.raises(PermissionError):
+        replace_file(Locked(), tmp_path / "x", attempts=3, wait=0)
 
 
 def test_partitions_are_disjoint_reproducible_and_class_complete(tmp_path):

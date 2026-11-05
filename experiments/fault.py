@@ -6,13 +6,19 @@ import subprocess
 import time
 from pathlib import Path
 
-from app.data import write_json
+from app.data import replace_file, write_json
 
 
 def kubectl(*args):
     return subprocess.run(
         ["kubectl", "-n", "bank-fl", *args], check=True, capture_output=True, text=True
     ).stdout
+
+
+def live_pods(bank):
+    """The bank's pods, minus any already shutting down from an earlier kill."""
+    pods = json.loads(kubectl("get", "pods", "-l", f"app={bank}", "-o", "json"))["items"]
+    return [pod for pod in pods if not pod["metadata"].get("deletionTimestamp")]
 
 
 def inject(bank: str, kind: str, duration: float, timeout: float, output: Path):
@@ -23,9 +29,9 @@ def inject(bank: str, kind: str, duration: float, timeout: float, output: Path):
     original_replicas = deployment["spec"]["replicas"]
     if original_replicas != 1:
         raise ValueError("expected exactly one bank replica before fault injection")
-    pods = json.loads(kubectl("get", "pods", "-l", f"app={bank}", "-o", "json"))["items"]
+    pods = live_pods(bank)
     if len(pods) != 1:
-        raise ValueError("expected one bank pod")
+        raise ValueError(f"expected one running {bank} pod; wait for its replacement to start")
     original_name = pods[0]["metadata"]["name"]
     original_uid = pods[0]["metadata"]["uid"]
     started = time.monotonic()
@@ -46,7 +52,7 @@ def inject(bank: str, kind: str, duration: float, timeout: float, output: Path):
     def save_record():
         temporary = output.with_suffix(output.suffix + ".tmp")
         write_json(temporary, record)
-        temporary.replace(output)
+        replace_file(temporary, output)
 
     try:
         record["status"] = "deleting"
@@ -64,9 +70,8 @@ def inject(bank: str, kind: str, duration: float, timeout: float, output: Path):
         save_record()
         until = time.monotonic() + timeout
         while time.monotonic() < until:
-            replacements = json.loads(kubectl("get", "pods", "-l", f"app={bank}", "-o", "json"))[
-                "items"
-            ]
+            # A pod still terminating from an earlier kill is never the replacement.
+            replacements = live_pods(bank)
             replacement = next(
                 (pod for pod in replacements if pod["metadata"]["uid"] != original_uid), None
             )

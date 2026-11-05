@@ -56,7 +56,7 @@ def test_demo_kubeconfig_does_not_change_parent_environment(workspace, monkeypat
     assert calls[0][:5] == ("kubectl", "--context", "kind-bank-fl-demo", "-n", "bank-fl")
 
 
-def test_fail_requires_active_run_and_prevents_second_fault(workspace, monkeypatch):
+def test_fail_allows_repeated_kills_but_one_at_a_time(workspace, monkeypatch):
     monkeypatch.setattr(demo, "active", lambda: False)
     with pytest.raises(ValueError, match="Start the demo"):
         demo.fail("bank-3")
@@ -66,11 +66,32 @@ def test_fail_requires_active_run_and_prevents_second_fault(workspace, monkeypat
     demo.save("latest.json", {"output": str(output)})
     calls = []
     monkeypatch.setattr(demo, "command", lambda *args: calls.append(args))
-    demo.fail("bank-2")
-    assert "bank-2" in calls[0]
-    with pytest.raises(FileExistsError):
-        demo.fail("bank-2")
-    assert len(calls) == 1
+    first = demo.fail("bank-2")
+    assert first.name == "fault-1.json" and "bank-2" in calls[0]
+    with pytest.raises(ValueError, match="previous bank pod"):
+        demo.fail("bank-3")  # the first kill has not finished recovering
+    first.write_text(json.dumps({"bank": "bank-2", "status": "ready"}))
+    second = demo.fail("bank-3")
+    assert second.name == "fault-2.json" and "bank-3" in calls[1]
+    assert demo.fault_records(output) == [first, second]
+
+
+def test_failed_injection_never_blocks_the_next_kill(workspace, monkeypatch):
+    monkeypatch.setattr(demo, "active", lambda: True)
+    output = workspace / "result"
+    output.mkdir()
+    demo.save("latest.json", {"output": str(output)})
+
+    def broken(*args):
+        raise demo.subprocess.CalledProcessError(1, "fault")
+
+    monkeypatch.setattr(demo, "command", broken)
+    with pytest.raises(demo.subprocess.CalledProcessError):
+        demo.fail("bank-1")
+    failed = json.loads((output / "fault-1.json").read_text())
+    assert failed["status"] == "failed" and "CalledProcessError" in failed["error"]
+    monkeypatch.setattr(demo, "command", lambda *args: None)
+    assert demo.fail("bank-1").name == "fault-2.json"
 
 
 def test_bundle_contains_code_not_training_data(workspace):
