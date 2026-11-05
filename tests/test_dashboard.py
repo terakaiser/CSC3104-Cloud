@@ -97,7 +97,8 @@ def test_local_run_results_are_loaded_and_rejections_are_flagged(tmp_path, monke
     run_dir = tmp_path / "results" / "demo" / "20261025-120000" / "run-123"
     run_dir.mkdir(parents=True)
     (run_dir / "run.json").write_text(
-        json.dumps({"config": {"rounds": 3}, "dataset": {"synthetic": False}}), encoding="utf-8"
+        json.dumps({"config": {"rounds": 3, "mu": 0.1}, "dataset": {"synthetic": False}}),
+        encoding="utf-8",
     )
     (run_dir / "summary.json").write_text(
         json.dumps(
@@ -130,6 +131,7 @@ def test_local_run_results_are_loaded_and_rejections_are_flagged(tmp_path, monke
     result = dashboard.dashboard_data()
 
     assert result["run"]["run_id"] == "run-123"
+    assert result["runs"] == [{"id": "run-123", "label": "run-123 · FedProx μ=0.1"}]
     assert result["run"]["summary"]["committed_rounds"] == 1
     assert result["run"]["rounds"][0]["seconds"] == 2.5
     assert any(alert["title"] == "Training replies rejected" for alert in result["alerts"])
@@ -164,6 +166,7 @@ def test_dashboard_http_serves_page_and_json_api(monkeypatch):
         assert 'id="faultTracker"' in page
         assert "Deleted pod:" in page
         assert 'id="muInput"' in page
+        assert all(f'<option value="{mu}"' in page for mu in ("0", "0.01", "0.1", "1"))
         assert "FedProx μ=" in page
         assert "Replacement pod:" in page
         assert api == {"selected": "run-1", "alerts": []}
