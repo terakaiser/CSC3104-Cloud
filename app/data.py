@@ -53,8 +53,15 @@ def synthetic_frame(rows: int, seed: int) -> pd.DataFrame:
     return frame
 
 
-def partition_indices(frame, indices, banks, rng):
-    """Stratify by class; favour different amount ranks while retaining overlap."""
+def partition_indices(frame, indices, banks, rng, skew=1.0):
+    """Stratify by class; favour different amount ranks while retaining overlap.
+
+    skew sets how different the banks are (non-IID strength). 0 gives every bank the
+    same mix of amounts (IID); 1 is the standard split; larger values make each
+    payment more likely to go to the bank nearest its amount rank, so banks overlap
+    less. The fraud rate stays the same in every bank: this is feature (amount)
+    skew, not label skew.
+    """
     allocations = [[] for _ in range(banks)]
     for label in (0, 1):
         subset = indices[frame.iloc[indices]["Class"].to_numpy() == label]
@@ -62,13 +69,17 @@ def partition_indices(frame, indices, banks, rng):
         centres = np.linspace(0, 1, banks)
         for rank, index in enumerate(order):
             position = rank / max(1, len(order) - 1)
-            scores = np.exp(-(((position - centres) / 0.35) ** 2)) + 0.08
+            # Each bank prefers amounts near its centre, with a floor so ranges overlap.
+            # skew is an exponent on that preference: 0 flattens it, above 1 sharpens it.
+            scores = (np.exp(-(((position - centres) / 0.35) ** 2)) + 0.08) ** skew
             bank = rng.choice(banks, p=scores / scores.sum())
             allocations[bank].append(index)
     return [np.array(sorted(a), dtype=np.int64) for a in allocations]
 
 
-def prepare(output: Path, *, csv: Path | None = None, rows=6000, banks=3, seed=42):
+def prepare(output: Path, *, csv: Path | None = None, rows=6000, banks=3, seed=42, skew=1.0):
+    if not np.isfinite(skew) or skew < 0:
+        raise ValueError("skew must be finite and non-negative")
     if not 2 <= banks <= 10:
         raise ValueError("banks must be between 2 and 10")
     if output.exists() and any(output.iterdir()):
@@ -94,7 +105,8 @@ def prepare(output: Path, *, csv: Path | None = None, rows=6000, banks=3, seed=4
     splits = {"train": train, "validation": validation, "test": test}
     rng = np.random.default_rng(seed)
     partitions = {
-        name: partition_indices(frame, indices, banks, rng) for name, indices in splits.items()
+        name: partition_indices(frame, indices, banks, rng, skew)
+        for name, indices in splits.items()
     }
     # Validate all partitions before writing any files.
     for name, groups in partitions.items():
@@ -114,6 +126,7 @@ def prepare(output: Path, *, csv: Path | None = None, rows=6000, banks=3, seed=4
         "sha256": checksum,
         "seed": seed,
         "banks": banks,
+        "skew": float(skew),
         "removed_duplicates": before - len(frame),
         "features": FEATURES,
         "transform": "V1..V28 unchanged; log1p(Amount)",

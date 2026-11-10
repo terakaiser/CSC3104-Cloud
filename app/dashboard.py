@@ -266,8 +266,11 @@ def _training_active():
 
 def _algorithm(path):
     try:
-        mu = json.loads((path / "run.json").read_text(encoding="utf-8"))["config"].get("mu", 0)
-        return f" · FedProx μ={mu:g}" if mu > 0 else " · FedAvg"
+        run = json.loads((path / "run.json").read_text(encoding="utf-8"))
+        mu = run["config"].get("mu", 0)
+        skew = run["dataset"].get("skew", 1.0)
+        label = f" · FedProx μ={mu:g}" if mu > 0 else " · FedAvg"
+        return label + (f" · skew {skew:g}" if skew != 1 else "")
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
         return ""  # live run not exported yet, or an unreadable run.json
 

@@ -23,7 +23,9 @@ def plot_runs(directories: list[Path], output: Path):
         summary = json.loads((directory / "summary.json").read_text(encoding="utf-8"))
         rounds = pd.read_csv(directory / "rounds.csv")
         config = meta["config"]
+        mu, skew = config.get("mu", 0.0), meta["dataset"].get("skew", 1.0)
         label = f"{meta['runtime']} / {config['mode']} / {config['scenario']} / N={config['banks']}"
+        label += (f" / mu={mu:g}" if mu else "") + (f" / skew={skew:g}" if skew != 1 else "")
         if label not in colors:
             colors[label] = palette(len(colors) % 10)
         legend_label = label if label not in labelled else "_nolegend_"
@@ -43,6 +45,8 @@ def plot_runs(directories: list[Path], output: Path):
             "dataset_sha256": meta["dataset"]["sha256"],
             "partition_seed": meta["dataset"]["seed"],
             **config,
+            "mu": mu,
+            "skew": skew,
             **{
                 k: summary[k]
                 for k in (
@@ -114,7 +118,8 @@ def plot_runs(directories: list[Path], output: Path):
     plt.close(fig)
     table = pd.DataFrame(rows)
     table.to_csv(output / "comparison.csv", index=False)
-    group = ["runtime", "mode", "scenario", "banks", "dataset_sha256", "partition_seed"]
+    group = ["runtime", "mode", "scenario", "banks", "mu", "skew"]
+    group += ["dataset_sha256", "partition_seed"]
     values = [
         "training_seconds",
         "successful_round_rate",
@@ -128,7 +133,12 @@ def plot_runs(directories: list[Path], output: Path):
     grouped = table.groupby(group, sort=False)
     means = grouped[values].mean()
     deviations = grouped[values].std().fillna(0)
-    labels = [f"{key[1]}\n{key[2]}\nN={key[3]} ({key[0]})" for key in means.index]
+    labels = [
+        f"{key[1]}\n{key[2]}\nN={key[3]} ({key[0]})"
+        + (f"\nmu={key[4]:g}" if key[4] else "")
+        + (f"\nskew={key[5]:g}" if key[5] != 1 else "")
+        for key in means.index
+    ]
     if len(means) < 2:
         # One configuration has nothing to compare against: each chart would be a single
         # full-width bar. The same numbers are in summary.json and aggregate.csv.

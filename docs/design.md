@@ -94,6 +94,21 @@ prototype's bank data is fixed; a real deployment would load each bank's latest
 labelled transactions. The CronJob does not coordinate with manually started
 runs, so operators should not start a demo run during a scheduled one.
 
+## Bank heterogeneity (`skew`)
+
+Each payment is allocated to a bank with probability proportional to
+`(exp(-((rank - centre) / 0.35)^2) + 0.08) ^ skew`, where `rank` is the payment's
+amount rank within its class (0 to 1) and each bank has an evenly spaced centre.
+`skew = 1` is the original split, reproduced exactly. `skew = 0` makes every bank
+equally likely (IID). Larger values sharpen the preference, so each bank holds a
+narrower range of amounts. An exponent is used rather than a narrower Gaussian
+because the 0.08 overlap floor would otherwise dominate between centres and make
+high skew *less* heterogeneous. Allocation is stratified by class, so every bank
+keeps the same fraud rate: this is feature skew on transaction amount, not label
+skew. The train/validation/test membership does not depend on skew, so all skew
+levels share one test set and one centralised baseline. Each bank count and skew
+is prepared into its own folder (`data/ulb`, `data/ulb-5`, `data/ulb-skew0`, …).
+
 ## Resource measurement
 
 `demo setup` installs Kubernetes metrics-server from a pinned manifest

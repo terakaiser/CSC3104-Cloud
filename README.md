@@ -76,6 +76,14 @@ go back to three. Switching keeps the cluster and its saved results.
 uv run bank-fl demo setup --banks 5
 ```
 
+To change **how different the banks are**, add `--skew` to setup: `0` gives every
+bank the same mix of payments, `1` is the standard split (the default), and higher
+values make the banks overlap less. Runs made on a non-standard split are labelled
+with their skew in the dashboard.
+```powershell
+uv run bank-fl demo setup --skew 0
+```
+
 After training, let the model check a payment it has never seen:
 ```powershell
 uv run bank-fl predict <results-folder> --fraud    # a real fraud payment

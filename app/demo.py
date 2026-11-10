@@ -26,6 +26,16 @@ BANK_COUNTS = (3, 5)  # deployments the demo can set up
 OUTAGE_SECONDS = 20.0  # how long a "temporary outage" keeps a bank offline
 
 
+def dataset_name(synthetic, count=3, skew=1.0):
+    """Folder under data/ for one bank count and skew, e.g. ulb, ulb-5, ulb-skew0."""
+    name = "demo-synthetic" if synthetic else "ulb"
+    if count != 3:
+        name += f"-{count}"
+    if skew != 1:
+        name += f"-skew{skew:g}"
+    return name
+
+
 def banks():
     """How many banks the demo cluster was set up with (3 before this was configurable)."""
     try:
@@ -73,6 +83,12 @@ def add_parser(commands):
     setup.add_argument("--synthetic", action="store_true", help="use software-test data")
     setup.add_argument(
         "--banks", type=int, choices=BANK_COUNTS, default=3, help="number of bank pods"
+    )
+    setup.add_argument(
+        "--skew",
+        type=float,
+        default=1.0,
+        help="how different the banks are: 0 identical, 1 standard, higher = less overlap",
     )
     start = actions.add_parser("start", help="train, stream progress, and export/evaluate results")
     start.add_argument("--rounds", type=int, default=30)
@@ -148,15 +164,14 @@ def active():
         return False
 
 
-def setup(synthetic, count=3):
+def setup(synthetic, count=3, skew=1.0):
     for executable in ("docker", "kubectl", "kind"):
         if not shutil.which(executable):
             raise ValueError(f"Install {executable} and add it to PATH before demo setup.")
     command("docker", "info", capture=True)
     ROOT.mkdir(exist_ok=True)
-    # Each bank count has its own prepared dataset, e.g. data/ulb and data/ulb-5.
-    name = ("demo-synthetic" if synthetic else "ulb") + ("" if count == 3 else f"-{count}")
-    data = Path("data", name).resolve()
+    # Each bank count and skew has its own prepared dataset, e.g. data/ulb, data/ulb-5.
+    data = Path("data", dataset_name(synthetic, count, skew)).resolve()
     previous = read("settings.json") if (ROOT / "settings.json").exists() else None
     if previous and previous["synthetic"] != synthetic:
         raise ValueError(
@@ -171,12 +186,16 @@ def setup(synthetic, count=3):
     )
     if synthetic:
         if not (data / "manifest.json").exists():
-            prepare(data, rows=6000, banks=count)
+            prepare(data, rows=6000, banks=count, skew=skew)
         manifest = read_manifest(data)
-        if not manifest["synthetic"] or manifest["banks"] != count:
-            raise ValueError(f"Demo synthetic dataset must contain {count} synthetic banks.")
+        if (
+            not manifest["synthetic"]
+            or manifest["banks"] != count
+            or manifest.get("skew", 1.0) != skew
+        ):
+            raise ValueError(f"{data} is not a {count}-bank synthetic dataset with skew {skew:g}.")
     else:
-        setup_data(Path("data/raw"), data, banks=count)
+        setup_data(Path("data/raw"), data, banks=count, skew=skew)
     print("Building the training image. First setup can take several minutes.", flush=True)
     command("docker", "build", "-t", IMAGE, ".")
     config = {
@@ -222,7 +241,13 @@ def setup(synthetic, count=3):
         )
     save(
         "settings.json",
-        {"data": str(data), "synthetic": synthetic, "banks": count, "mounted": mounted},
+        {
+            "data": str(data),
+            "synthetic": synthetic,
+            "banks": count,
+            "skew": skew,
+            "mounted": mounted,
+        },
     )
     command("kind", "load", "docker-image", IMAGE, "--name", CLUSTER)
     if str(data) == mounted:
@@ -266,7 +291,7 @@ def setup(synthetic, count=3):
         )
     except subprocess.CalledProcessError:
         print("Warning: metrics-server is not ready; pod CPU/memory will not be recorded.")
-    print(f"Ready with {count} banks. Run: uv run bank-fl demo start", flush=True)
+    print(f"Ready with {count} banks (skew {skew:g}). Run: uv run bank-fl demo start", flush=True)
 
 
 def collect():
@@ -501,7 +526,7 @@ def dispatch(args):
         if args.action == "setup":
             if active():
                 raise ValueError("Wait for the active demo to finish before setup.")
-            setup(args.synthetic, args.banks)
+            setup(args.synthetic, args.banks, args.skew)
         elif args.action == "start":
             start(args.rounds, args.deadline, args.mu)
         elif args.action == "fail":

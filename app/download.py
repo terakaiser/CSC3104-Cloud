@@ -71,7 +71,7 @@ def download_csv(raw: Path) -> Path:
     return target
 
 
-def setup_data(raw: Path, output: Path, *, banks: int = 3, seed: int = 42):
+def setup_data(raw: Path, output: Path, *, banks: int = 3, seed: int = 42, skew: float = 1.0):
     if not 2 <= banks <= 10:
         raise ValueError("banks must be between 2 and 10")
     existing = None
@@ -86,7 +86,9 @@ def setup_data(raw: Path, output: Path, *, banks: int = 3, seed: int = 42):
             "banks": banks,
             "seed": seed,
         }
-        if any(existing.get(key) != value for key, value in expected.items()):
+        # Partitions prepared before skew was configurable used the standard split.
+        same_skew = existing.get("skew", 1.0) == skew
+        if not same_skew or any(existing.get(k) != v for k, v in expected.items()):
             raise ValueError(
                 f"{output} contains different data or settings; "
                 "choose a different --output directory"
@@ -106,7 +108,7 @@ def setup_data(raw: Path, output: Path, *, banks: int = 3, seed: int = 42):
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".ulb-prepare-", dir=output.parent) as temporary:
         candidate = Path(temporary) / "partitions"
-        result = prepare(candidate, csv=csv, banks=banks, seed=seed)
+        result = prepare(candidate, csv=csv, banks=banks, seed=seed, skew=skew)
         if output.exists():
             output.rmdir()  # Only an empty directory can be removed here.
         candidate.rename(output)

@@ -85,7 +85,7 @@ or the cluster again before the report is written; copy both somewhere safe.
   duplicate removal, bad input, checksum mismatch and interrupted preparation
   (`tests/test_data.py`, `tests/test_download.py`).
 - **Caveat:** the personas are artificial splits of anonymised PCA features, and
-  the strength of the split is fixed (see Section 6, `--skew`).
+  the strength of the split is set by `skew` (Section 3.8).
 
 ### 2.2 Model and local training (`app/model.py`, `app/worker.py`)
 - **What:** a 29 → 16 → 1 neural network (497 parameters) trained with SGD
@@ -401,7 +401,60 @@ or the cluster again before the report is written; copy both somewhere safe.
   dataset copy inside the node is lost if the kind cluster is recreated (setup
   copies it again).
 
-### 3.8 Robustness fixes found by testing
+### 3.8 Adjustable bank heterogeneity (`skew`) and research question 1
+- **What:** a `--skew` setting on data preparation (`setup-data`, `prepare`,
+  `demo setup --skew`). Each payment goes to a bank with probability proportional
+  to its amount-rank preference raised to the power `skew`: 0 gives identical
+  banks (IID), 1 is the original split (reproduced byte for byte), higher values
+  make banks overlap less. Each skew is prepared into its own folder and can be
+  deployed to the same cluster; runs are labelled with their skew.
+- **Why:** research question 1 asks how performance changes *as non-IID
+  heterogeneity increases*. Before this the heterogeneity was a constant in the
+  code, so the question could not be tested. All skew levels share the same
+  train/validation/test membership, so they share one test set and one
+  centralised baseline, which makes the comparison fair.
+- **Design note:** the first version narrowed each bank's Gaussian preference.
+  Measuring it showed banks became *less* different at high skew (amount-mean
+  ratio 5.3 at skew 3 vs 7.5 at skew 1), because the split's fixed overlap floor
+  dominates between bank centres. An exponent on the whole preference is
+  monotonic (ratios 1.5, 7.5, 27.5, 42.4 at skew 0, 1, 2, 4 on the test data).
+- **Evidence (10 Nov, kind cluster, 3 banks, FedAvg unless stated, 20 rounds,
+  seed 42, grace 3 s; one run each):**
+
+  | Skew | Mean amount per bank | Recall | Precision | F1 | AP | AP after round 2 | Run (`results/demo/`) |
+  |---|---|---|---|---|---|---|---|
+  | 0 (identical) | 88.5 / 88.8 / 87.7 | 0.775 | 0.846 | 0.809 | 0.708 | 0.677 | `20261110-184635` |
+  | 1 (standard) | 22.5 / 54.7 / 211.5 | 0.775 | 0.833 | 0.803 | 0.703 | 0.654 | `20261110-190804` |
+  | 2 | 5.4 / 37.3 / 270.3 | 0.747 | 0.841 | 0.791 | 0.712 | 0.650 | `20261110-185212` |
+  | 4 | 2.5 / 30.1 / 290.2 | 0.747 | 0.855 | 0.797 | 0.700 | 0.642 | `20261110-185834` |
+  | 4, FedProx μ=0.1 | 2.5 / 30.1 / 290.2 | 0.747 | 0.855 | 0.797 | 0.702 | 0.648 | `20261110-190249` |
+  | Centralised (pooled data, 20 epochs) | n/a | 0.775 | 0.833 | 0.803 | 0.725 | 0.688 | `results/centralized/centralized-b9b389dce7` |
+
+  Every federated run committed 20/20 rounds with all three banks in every round
+  (participation 20 / 20 / 20, no rejected updates), in 232–253 s.
+- **What the numbers say (answer to RQ1 so far):**
+  - Final quality is **essentially flat** as banks go from identical to having
+    mean amounts 116 times apart (2.5 vs 290.2). Recall moves from 0.775 to 0.747,
+    which is 55 vs 53 of 71 frauds: two frauds, within what one run can resolve.
+  - Federated training at the standard split matches the centralised model on
+    recall, precision and F1 (identical confusion counts: 55 caught, 11 false
+    alarms) and is slightly behind on AP (0.703 vs 0.725).
+  - The one consistent trend is **early convergence**: AP after two rounds falls
+    steadily with skew (0.677 → 0.654 → 0.650 → 0.642), so more different banks
+    learn a little more slowly at first, then catch up by about round 10.
+  - FedProx (μ = 0.1) at the highest skew gave the same final confusion counts
+    as FedAvg, so it had nothing to fix here.
+- **Why the effect is small (interpretation, to state as such):** this skew acts
+  on one of 29 input features and leaves each bank's fraud rate unchanged; banks
+  do one local epoch per round with a small model, so local models drift little
+  before averaging. Skew in the *label* distribution (banks with very different
+  fraud rates) is the harder case in the literature and is not tested here.
+- **Caveats:** one seed per setting; 71 test frauds; per-bank test results are
+  not comparable across skew levels because the test payments are also
+  re-allocated between banks. The repeated comparison study should confirm the
+  early-convergence trend before the report claims it.
+
+### 3.9 Robustness fixes found by testing
 | Problem | Cause | Fix |
 |---|---|---|
 | Malformed bank metrics could crash a run | NaN / wrong types reached the event log | Rejected as an invalid reply (Chee Yuan) |
@@ -410,7 +463,7 @@ or the cluster again before the report is written; copy both somewhere safe.
 | Killing the same bank twice could hang | A pod still terminating was mistaken for the replacement | Ignore pods with a deletion timestamp |
 | "Failure simulation failed" on Windows | Windows cannot replace a file another process (the dashboard) has open | Retry the atomic replace for up to 2 s; show the real error |
 
-### 3.9 Operations and tooling
+### 3.10 Operations and tooling
 - **Dashboard** (`uv run bank-fl demo dashboard`, Charmain and Yee, 26–27 Oct):
   - *What:* a local web page served by the CLI. Live Federation view (bank states,
     which banks each round used, global model version), Start Training (rounds,
@@ -447,8 +500,8 @@ or the cluster again before the report is written; copy both somewhere safe.
   code-only rebuild takes about 3 s instead of reinstalling all packages.
 - **Experiment deadline** frozen at 40 s from a healthy pilot (rounds 22.1–24.9 s
   locally) before any comparison runs (Chee Yuan).
-- **Quality checks:** 106 automated tests across 17 files (coordinator and round
-  rules 27, configuration 12, demo commands 13, dashboard 12, Flower transport
+- **Quality checks:** 115 automated tests across 18 files (coordinator and round
+  rules 27, configuration 12, demo commands 13, dashboard 12, bank heterogeneity 9, Flower transport
   10, data and download 10, resources 4, prediction 4, recovery 3, fault 2,
   scheduling 2, deployment 2, model/FedProx 1, evaluation 1); `ruff` lint and
   formatting enforced. About 4,100 lines of application code and 1,570 lines of
@@ -465,6 +518,8 @@ Single runs; repeated runs are still needed before claiming differences.
 | 26 Oct (`20261026T132412-6cf831b6`) | FedAvg | 30 | 0.775 | 0.797 | 0.786 | 0.706 |
 | 5 Nov (`20261105T125505-3e6d884f`) | FedProx μ=1 | 30 | 0.746 | 0.828 | 0.785 | 0.700 |
 | 6 Nov (`20261105T164748-296d386c`) | FedProx μ=0.1, grace 3 s | 20 | 0.789 | 0.789 | 0.789 | 0.707 |
+| 10 Nov (`20261110-190804`) | FedAvg, grace 3 s | 20 | 0.775 | 0.833 | 0.803 | 0.703 |
+| 10 Nov (`centralized-b9b389dce7`) | Centralised baseline (pooled data) | 20 epochs | 0.775 | 0.833 | 0.803 | 0.725 |
 
 - Test set: 42,559 payments, 71 frauds, so one fraud changes recall by about 1.4%.
 - Most learning happens in the first ~10 rounds (26 Oct run: recall 0.75 after
@@ -485,7 +540,6 @@ Single runs; repeated runs are still needed before claiming differences.
 
 | Item | Purpose |
 |---|---|
-| Adjustable bank difference (`--skew`) | Research question 1: performance as non-IID heterogeneity increases |
 | Comparison study (resilient / synchronous / timeout / centralised, FedAvg vs FedProx, 3 seeds) | Main Evaluation graphs; several hours of compute |
 | Full clean-clone test + `GROUP18_INSTRUCTIONS.pdf` | Required submission; proves it works beyond our laptops |
 

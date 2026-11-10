@@ -53,6 +53,12 @@ def main(argv=None):
     setup.add_argument("--output", type=Path, default=Path("data/ulb"))
     setup.add_argument("--banks", type=int, default=3)
     setup.add_argument("--seed", type=int, default=42)
+    setup.add_argument(
+        "--skew",
+        type=float,
+        default=1.0,
+        help="how different the banks are: 0 identical, 1 standard, higher = less overlap",
+    )
     prepare_cmd = commands.add_parser(
         "prepare", help="prepare real CSV or synthetic test partitions"
     )
@@ -63,6 +69,12 @@ def main(argv=None):
     prepare_cmd.add_argument("--rows", type=int, default=6000)
     prepare_cmd.add_argument("--banks", type=int, default=3)
     prepare_cmd.add_argument("--seed", type=int, default=42)
+    prepare_cmd.add_argument(
+        "--skew",
+        type=float,
+        default=1.0,
+        help="how different the banks are: 0 identical, 1 standard, higher = less overlap",
+    )
     for name, help_text in [
         ("run", "run the concurrent local harness"),
         ("flower", "launch a real local Flower federation, run, and clean up its processes"),
@@ -91,14 +103,21 @@ def main(argv=None):
         if args.command == "setup-data":
             from app.download import setup_data
 
-            result = setup_data(args.raw, args.output, banks=args.banks, seed=args.seed)
+            result = setup_data(
+                args.raw, args.output, banks=args.banks, seed=args.seed, skew=args.skew
+            )
             print(json.dumps(result["partitions"]["train"], indent=2))
             return
         if args.command == "prepare":
             from app.data import prepare
 
             result = prepare(
-                args.output, csv=args.csv, rows=args.rows, banks=args.banks, seed=args.seed
+                args.output,
+                csv=args.csv,
+                rows=args.rows,
+                banks=args.banks,
+                seed=args.seed,
+                skew=args.skew,
             )
             print(f"Prepared {result['source']} at {args.output.resolve()}")
             print(json.dumps(result["partitions"]["train"], indent=2))
