@@ -27,7 +27,8 @@ def command(package: Path, coordinator: str, config: RunConfig):
         "--federation-config",
         f'address="{coordinator}"',
         "--run-config",
-        f'rounds={config.rounds} deadline={config.deadline} mu={config.mu} label="scheduled"',
+        f"rounds={config.rounds} deadline={config.deadline} mu={config.mu} "
+        f'banks={config.banks} quorum={config.quorum} label="scheduled"',
     ]
 
 
@@ -36,10 +37,17 @@ def main(argv=None):
     parser.add_argument("--coordinator", default="coordinator:9093")
     parser.add_argument("--rounds", type=int, default=20)
     parser.add_argument("--deadline", type=float, default=30.0)
+    parser.add_argument("--banks", type=int, default=3, help="bank pods in this deployment")
     parser.add_argument("--mu", type=float, default=0.0, help="FedProx strength (0 = FedAvg)")
     args = parser.parse_args(argv)
     # Validate before contacting the cluster, so a bad schedule fails fast and clearly.
-    config = RunConfig(rounds=args.rounds, deadline=args.deadline, mu=args.mu)
+    config = RunConfig(
+        rounds=args.rounds,
+        deadline=args.deadline,
+        mu=args.mu,
+        banks=args.banks,
+        quorum=args.banks // 2 + 1,  # a majority: 2 of 3, 3 of 5
+    )
     root = Path(__file__).resolve().parents[1]
     with tempfile.TemporaryDirectory() as temporary:
         package = stage_bundle(Path(temporary), root)

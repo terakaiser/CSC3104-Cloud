@@ -117,11 +117,11 @@ def manifests(banks=3, image="bank-fl:0.1.0", host_data="/mnt/bank-fl"):
                 },
             }
         )
-    documents.append(scheduled_training(namespace, image))
+    documents.append(scheduled_training(namespace, image, banks=banks))
     return documents
 
 
-def scheduled_training(namespace, image, schedule="0 2 * * 0", rounds=20):
+def scheduled_training(namespace, image, schedule="0 2 * * 0", rounds=20, banks=3):
     """Weekly retraining: start a new federated run every Sunday at 02:00 SGT."""
     return {
         "apiVersion": "batch/v1",
@@ -160,6 +160,8 @@ def scheduled_training(namespace, image, schedule="0 2 * * 0", rounds=20):
                                         "app.scheduled",
                                         "--rounds",
                                         str(rounds),
+                                        "--banks",
+                                        str(banks),
                                     ],
                                     "securityContext": {
                                         "allowPrivilegeEscalation": False,

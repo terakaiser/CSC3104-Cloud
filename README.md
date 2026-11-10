@@ -49,8 +49,11 @@ uv run bank-fl demo dashboard
 ```
 It opens <http://127.0.0.1:8765> in your browser. In **Live Monitor**:
 1. Click **Start Training**.
-2. After a few rounds commit, click **Delete Bank Pod** in **Simulate
-   Self-Healing** (bank 3 by default), then click again to confirm.
+2. After a few rounds commit, pick a bank and a failure type in **Simulate
+   Self-Healing**, click **Inject Failure**, then click again to confirm.
+   *Delete pod* kills the bank's pod (Kubernetes recreates it in seconds);
+   *Offline for 20 s* is a temporary outage. You can inject more failures in the
+   same run, one at a time.
 3. Watch the Live Federation banner: **bank fails (red) → training continues →
    bank rejoins (green).**
 4. Open **Results** after training finishes.
@@ -61,9 +64,16 @@ second terminal.
 
 Other demo commands:
 ```powershell
-uv run bank-fl demo status              # show the four pods
+uv run bank-fl demo status              # show the pods
 uv run bank-fl demo start --rounds 50   # longer run, more time to see the rejoin
 uv run bank-fl demo results             # retry exporting results if it failed
+```
+
+To run with **five banks** (a round then needs 3 of 5), stop the dashboard, run
+setup with `--banks 5`, and open the dashboard again. Run plain `demo setup` to
+go back to three. Switching keeps the cluster and its saved results.
+```powershell
+uv run bank-fl demo setup --banks 5
 ```
 
 After training, let the model check a payment it has never seen:

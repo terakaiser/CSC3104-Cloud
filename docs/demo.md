@@ -60,8 +60,12 @@ or see the bank rejoin. `--deadline` controls the attempt deadline in seconds an
 defaults to 30. A deadline should be chosen from a healthy rehearsal on the same
 machine. Do not promise a particular round or recovery time.
 
-`demo fail` defaults to bank 3; `--bank bank-1` or `--bank bank-2` selects another
-bank. You can kill banks as often as you like during a run, one at a time: the
+`demo fail` defaults to killing bank 3's pod; `--bank` selects another bank and
+`--kind absence` takes the bank offline for `--duration` seconds (default 20)
+instead: the Deployment is scaled to 0 and back. `demo setup --banks 5` deploys
+five banks with a quorum of 3; plain `demo setup` returns to three. The 5-bank
+dataset (`data/ulb-5`) is copied into the kind node, because the node's data
+mount is fixed when the cluster is created. You can kill banks as often as you like during a run, one at a time: the
 next kill is allowed once the previous replacement pod is Ready. Each kill gets
 its own record (`fault-1.json`, `fault-2.json`, …) and its own recovery time in
 `recovery.json`. Kill early (e.g. round 5 of 20) so there is time to see the bank

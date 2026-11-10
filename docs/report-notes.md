@@ -351,7 +351,57 @@ or the cluster again before the report is written; copy both somewhere safe.
   laptop; means include the idle seconds before round 1. CronJob runs are not
   sampled.
 
-### 3.7 Robustness fixes found by testing
+### 3.7 Five banks and temporary outages (scaling and a second failure type)
+- **What:** `demo setup --banks 5` deploys five bank pods with a majority quorum
+  of 3 (three banks: 2). It prepares a separate 5-bank dataset (`data/ulb-5`),
+  generates the manifests for that count, removes or adds the extra bank
+  Deployments, and tells Start Training and the weekly CronJob the bank count.
+  The dashboard draws however many banks are deployed. A second failure type,
+  **temporary outage** (`absence`), scales a bank's Deployment to 0 for 20 s and
+  back, next to the existing pod **kill**. Both are in the dashboard's "Simulate
+  Self-Healing" card and in `demo fail --kind`.
+- **Why:** the proposal's evaluation promises "different numbers of participating
+  banks" and "temporary client unavailability". Five banks shows the round logic
+  is not hard-wired to three and lets a quorum survive *two* missing banks. An
+  outage is a harder test than a kill: Kubernetes replaces a killed pod in about
+  3 s, so the bank misses little; an offline bank misses whole rounds and has to
+  rejoin with a model several versions newer than the one it last saw.
+- **Design choice:** kind fixes a node's data mount when the cluster is created.
+  To switch bank counts without recreating the cluster (and losing the saved runs
+  on its results volume), the other dataset is copied into the node and the
+  manifests point at that path. Switching 3 → 5 → 3 keeps the cluster.
+- **Evidence (10 Nov, FedAvg, grace 3 s, deadline 30 s):**
+
+  | | 5 banks, one 20 s outage | 3 banks, one pod kill |
+  |---|---|---|
+  | Run folder (`results/demo/`) | `20261110-180818` | `20261110-181339` |
+  | Rounds committed / attempts | 14 / 14 | 8 / 8 |
+  | Quorum | 3 of 5 | 2 of 3 |
+  | Training time | 206.7 s (about 14 s between commits) | 121.6 s (about 13 s between commits) |
+  | Fault → pod Ready | 23.3 s (20 s offline + 3.3 s) | 3.2 s |
+  | Fault → bank contributing again | 60.2 s | 30.0 s |
+  | Rounds the failed bank missed | 4 (rounds 4–7) | 2 (rounds 3–4) |
+  | Participation | 14 / 14 / 14 / 14 / 10 | 6 / 8 / 8 |
+
+  In the 5-bank run every round outside the outage used all five banks; during
+  the outage rounds kept committing with four. No attempt missed its deadline.
+  Round time with five banks was about the same as with three, because banks
+  train in parallel in separate pods (the laptop has 28 CPUs).
+- **5-bank partitions (training):** 29,895 / 44,804 / 49,277 / 44,545 / 30,087
+  payments with 51 / 82 / 74 / 79 / 45 frauds and mean amounts 22.8 / 26.6 / 57.8
+  / 134.0 / 227.6.
+- **5-bank quality (one 14-round run, same test set of 71 frauds):** recall 0.746,
+  precision 0.815, F1 0.779, AP 0.688; frauds caught per bank 11/12, 7/13, 10/14,
+  15/18, 10/14. Fewer training frauds per bank than with three banks; whether
+  quality really differs needs the repeated comparison runs.
+- **Per-pod CPU in the 5-bank run:** bank means 540–669m, peaks 836–915m (limit
+  1000m); coordinator mean 139m. bank-5's mean is lowest because it was offline
+  for part of the run.
+- **Caveats:** one run each; bank counts are limited to 3 and 5; the 5-bank
+  dataset copy inside the node is lost if the kind cluster is recreated (setup
+  copies it again).
+
+### 3.8 Robustness fixes found by testing
 | Problem | Cause | Fix |
 |---|---|---|
 | Malformed bank metrics could crash a run | NaN / wrong types reached the event log | Rejected as an invalid reply (Chee Yuan) |
@@ -360,7 +410,7 @@ or the cluster again before the report is written; copy both somewhere safe.
 | Killing the same bank twice could hang | A pod still terminating was mistaken for the replacement | Ignore pods with a deletion timestamp |
 | "Failure simulation failed" on Windows | Windows cannot replace a file another process (the dashboard) has open | Retry the atomic replace for up to 2 s; show the real error |
 
-### 3.8 Operations and tooling
+### 3.9 Operations and tooling
 - **Dashboard** (`uv run bank-fl demo dashboard`, Charmain and Yee, 26–27 Oct):
   - *What:* a local web page served by the CLI. Live Federation view (bank states,
     which banks each round used, global model version), Start Training (rounds,
@@ -397,8 +447,8 @@ or the cluster again before the report is written; copy both somewhere safe.
   code-only rebuild takes about 3 s instead of reinstalling all packages.
 - **Experiment deadline** frozen at 40 s from a healthy pilot (rounds 22.1–24.9 s
   locally) before any comparison runs (Chee Yuan).
-- **Quality checks:** 101 automated tests across 16 files (coordinator and round
-  rules 27, configuration 12, demo commands 12, dashboard 11, Flower transport
+- **Quality checks:** 106 automated tests across 17 files (coordinator and round
+  rules 27, configuration 12, demo commands 13, dashboard 12, Flower transport
   10, data and download 10, resources 4, prediction 4, recovery 3, fault 2,
   scheduling 2, deployment 2, model/FedProx 1, evaluation 1); `ruff` lint and
   formatting enforced. About 4,100 lines of application code and 1,570 lines of
@@ -435,7 +485,6 @@ Single runs; repeated runs are still needed before claiming differences.
 
 | Item | Purpose |
 |---|---|
-| 5 banks + temporary-outage experiments | Proposal scenarios ("varying number of banks", "temporary unavailability") |
 | Adjustable bank difference (`--skew`) | Research question 1: performance as non-IID heterogeneity increases |
 | Comparison study (resilient / synchronous / timeout / centralised, FedAvg vs FedProx, 3 seeds) | Main Evaluation graphs; several hours of compute |
 | Full clean-clone test + `GROUP18_INSTRUCTIONS.pdf` | Required submission; proves it works beyond our laptops |

@@ -61,6 +61,8 @@ def inject(bank: str, kind: str, duration: float, timeout: float, output: Path):
             kubectl("delete", "pod", original_name, "--wait=false")
         else:
             kubectl("scale", "deployment", bank, "--replicas=0")
+            record["status"] = "offline"  # no pod at all until the outage ends
+            save_record()
             try:
                 time.sleep(duration)
             finally:

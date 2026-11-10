@@ -272,15 +272,50 @@ def test_simulate_self_healing_injects_one_selected_bank_failure(tmp_path, monke
     record = {"bank": "bank-2", "fault_to_ready_seconds": 3.5, "recovery_censored": False}
     monkeypatch.setattr(demo, "active", lambda: True)
 
-    def fail(bank):
-        assert bank == "bank-2"
+    calls = []
+
+    def fail(bank, kind, duration):
+        calls.append((bank, kind, duration))
         (output / "fault.json").write_text(json.dumps(record), encoding="utf-8")
 
     monkeypatch.setattr(demo, "fail", fail)
 
     assert dashboard.simulate_self_healing("bank-2") == {"bank": "bank-2", "record": record}
-    with pytest.raises(ValueError, match="bank-1, bank-2, or bank-3"):
+    dashboard.simulate_self_healing("bank-1", "absence")
+    assert calls == [("bank-2", "kill", 20.0), ("bank-1", "absence", 20.0)]
+    with pytest.raises(ValueError, match="bank-1, bank-2, bank-3"):
         dashboard.simulate_self_healing("coordinator")
+    with pytest.raises(ValueError, match="bank-1, bank-2, bank-3"):
+        dashboard.simulate_self_healing("bank-4")  # only a 5-bank setup has bank-4
+    with pytest.raises(ValueError, match="kill or absence"):
+        dashboard.simulate_self_healing("bank-1", "explode")
+    demo.save("settings.json", {"synthetic": False, "banks": 5})
+    dashboard.simulate_self_healing("bank-4")
+    assert calls[-1] == ("bank-4", "kill", 20.0)
+
+
+def test_page_is_drawn_for_the_configured_bank_count(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    demo.ROOT.mkdir()
+
+    def page():
+        server = dashboard.ThreadingHTTPServer(("127.0.0.1", 0), dashboard.DashboardHandler)
+        thread = threading.Thread(target=server.serve_forever)
+        thread.start()
+        try:
+            with urlopen(f"http://127.0.0.1:{server.server_port}/", timeout=5) as response:
+                return response.read().decode("utf-8")
+        finally:
+            server.shutdown()
+            thread.join()
+            server.server_close()
+
+    three = page()  # no settings yet: the original three-bank demo
+    assert "NBANKS=3," in three and "repeat(3,120px)" in three
+    assert "__BANKS__" not in three and "__OUTAGE__" not in three
+    assert "Offline for 20 s" in three
+    demo.save("settings.json", {"synthetic": False, "banks": 5})
+    assert "NBANKS=5," in page()
 
 
 def test_launch_training_runs_demo_command_in_background(tmp_path, monkeypatch):
@@ -392,7 +427,7 @@ def test_dashboard_failure_endpoint_accepts_local_simulation(monkeypatch):
     monkeypatch.setattr(
         dashboard,
         "simulate_self_healing",
-        lambda bank: calls.append(bank) or expected,
+        lambda bank, kind: calls.append((bank, kind)) or expected,
     )
     server = dashboard.ThreadingHTTPServer(("127.0.0.1", 0), dashboard.DashboardHandler)
     thread = threading.Thread(target=server.serve_forever)
@@ -400,7 +435,7 @@ def test_dashboard_failure_endpoint_accepts_local_simulation(monkeypatch):
     base = f"http://127.0.0.1:{server.server_port}"
     request = Request(
         f"{base}/api/fail",
-        data=json.dumps({"bank": "bank-3"}).encode(),
+        data=json.dumps({"bank": "bank-3", "kind": "absence"}).encode(),
         headers={"Content-Type": "application/json", "Origin": base},
         method="POST",
     )
@@ -408,7 +443,7 @@ def test_dashboard_failure_endpoint_accepts_local_simulation(monkeypatch):
         with urlopen(request) as response:
             assert response.status == 200
             assert json.loads(response.read()) == expected
-        assert calls == ["bank-3"]
+        assert calls == [("bank-3", "absence")]
     finally:
         server.shutdown()
         thread.join()

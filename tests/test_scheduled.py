@@ -21,6 +21,19 @@ def test_scheduled_run_targets_the_coordinator_service_and_streams(monkeypatch):
     assert args[args.index("--federation-config") + 1] == 'address="coordinator:9093"'
     run_config = args[args.index("--run-config") + 1]
     assert "rounds=5" in run_config and "mu=0.1" in run_config
+    assert "banks=3 quorum=2" in run_config
+
+
+def test_scheduled_run_uses_a_majority_quorum_for_five_banks(monkeypatch):
+    calls = []
+    monkeypatch.setattr(scheduled, "stage_bundle", lambda output, root: output / "package")
+    monkeypatch.setattr(
+        scheduled.subprocess,
+        "run",
+        lambda args, check: calls.append(args) or SimpleNamespace(returncode=0),
+    )
+    scheduled.main(["--banks", "5"])
+    assert "banks=5 quorum=3" in calls[0][calls[0].index("--run-config") + 1]
 
 
 def test_invalid_settings_fail_before_starting_a_run(monkeypatch):

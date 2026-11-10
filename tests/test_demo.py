@@ -76,6 +76,28 @@ def test_fail_allows_repeated_kills_but_one_at_a_time(workspace, monkeypatch):
     assert demo.fault_records(output) == [first, second]
 
 
+def test_five_bank_setup_changes_quorum_wait_and_allowed_banks(workspace, monkeypatch):
+    assert demo.banks() == 3 and demo.bank_ids() == ("bank-1", "bank-2", "bank-3")
+    monkeypatch.setattr(demo, "active", lambda: True)
+    with pytest.raises(ValueError, match="bank must be one of"):
+        demo.fail("bank-5")
+    demo.save("settings.json", {"data": "x", "synthetic": True, "banks": 5})
+    assert demo.banks() == 5
+    assert demo.workloads() == ("coordinator", "bank-1", "bank-2", "bank-3", "bank-4", "bank-5")
+    output = workspace / "result"
+    output.mkdir()
+    demo.save("latest.json", {"output": str(output)})
+    calls = []
+    monkeypatch.setattr(demo, "command", lambda *args: calls.append(args))
+    demo.fail("bank-5", "absence", 20.0)
+    # A temporary outage is passed through to the injector with its duration.
+    assert calls[0][calls[0].index("--kind") + 1] == "absence"
+    assert calls[0][calls[0].index("--duration") + 1] == 20.0
+    assert "bank-5" in calls[0]
+    with pytest.raises(ValueError, match="kill or absence"):
+        demo.fail("bank-1", "explode")
+
+
 def test_failed_injection_never_blocks_the_next_kill(workspace, monkeypatch):
     monkeypatch.setattr(demo, "active", lambda: True)
     output = workspace / "result"
@@ -169,7 +191,7 @@ def test_start_records_exact_run_and_cleans_owned_processes(workspace, monkeypat
             demo.start(30, 30)
     else:
         demo.start(30, 30, 0.01)
-        assert submitted[0][-1] == 'rounds=30 deadline=30 mu=0.01 label="demo"'
+        assert submitted[0][-1] == ('rounds=30 deadline=30 mu=0.01 banks=3 quorum=2 label="demo"')
     assert collected == ([] if exit_code else [True])
     # Waiting on every pod would hang on finished CronJob pods, which are never Ready.
     (wait,) = [call for call in kubectl_calls if call[0] == "wait"]

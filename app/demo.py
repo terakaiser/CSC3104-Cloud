@@ -22,8 +22,27 @@ ROOT = Path(".demo")
 CLUSTER = "bank-fl-demo"
 IMAGE = "bank-fl:demo"
 PORT = 19093
-# Long-running demo workloads. Finished CronJob pods are never Ready, so waits use these.
-WORKLOADS = ("coordinator", "bank-1", "bank-2", "bank-3")
+BANK_COUNTS = (3, 5)  # deployments the demo can set up
+OUTAGE_SECONDS = 20.0  # how long a "temporary outage" keeps a bank offline
+
+
+def banks():
+    """How many banks the demo cluster was set up with (3 before this was configurable)."""
+    try:
+        return json.loads((ROOT / "settings.json").read_text(encoding="utf-8")).get("banks", 3)
+    except (OSError, ValueError):
+        return 3
+
+
+def bank_ids(count=None):
+    return tuple(f"bank-{i}" for i in range(1, (count or banks()) + 1))
+
+
+def workloads(count=None):
+    """Long-running demo pods. Finished CronJob pods are never Ready, so waits use these."""
+    return ("coordinator", *bank_ids(count))
+
+
 # A fault record is final once its replacement pod is Ready, timed out, or the kill failed.
 FINAL_FAULT_STATES = {"ready", "timed_out", "failed"}
 
@@ -52,12 +71,22 @@ def add_parser(commands):
     actions = parser.add_subparsers(dest="action", required=True)
     setup = actions.add_parser("setup", help="prepare ULB data, image, and dedicated cluster")
     setup.add_argument("--synthetic", action="store_true", help="use software-test data")
+    setup.add_argument(
+        "--banks", type=int, choices=BANK_COUNTS, default=3, help="number of bank pods"
+    )
     start = actions.add_parser("start", help="train, stream progress, and export/evaluate results")
     start.add_argument("--rounds", type=int, default=30)
     start.add_argument("--deadline", type=float, default=30)
     start.add_argument("--mu", type=float, default=0.0, help="FedProx strength (0 = FedAvg)")
-    fail = actions.add_parser("fail", help="replace bank 3's pod during an active demo")
-    fail.add_argument("--bank", choices=["bank-1", "bank-2", "bank-3"], default="bank-3")
+    fail = actions.add_parser("fail", help="fail one bank's pod during an active demo")
+    fail.add_argument("--bank", default="bank-3")
+    fail.add_argument(
+        "--kind",
+        choices=["kill", "absence"],
+        default="kill",
+        help="kill: delete the pod; absence: take the bank offline for --duration seconds",
+    )
+    fail.add_argument("--duration", type=float, default=OUTAGE_SECONDS)
     dashboard = actions.add_parser(
         "dashboard", help="open the local Kubernetes and training dashboard"
     )
@@ -119,14 +148,17 @@ def active():
         return False
 
 
-def setup(synthetic):
+def setup(synthetic, count=3):
     for executable in ("docker", "kubectl", "kind"):
         if not shutil.which(executable):
             raise ValueError(f"Install {executable} and add it to PATH before demo setup.")
     command("docker", "info", capture=True)
     ROOT.mkdir(exist_ok=True)
-    data = Path("data/demo-synthetic" if synthetic else "data/ulb").resolve()
-    if (ROOT / "settings.json").exists() and read("settings.json")["data"] != str(data):
+    # Each bank count has its own prepared dataset, e.g. data/ulb and data/ulb-5.
+    name = ("demo-synthetic" if synthetic else "ulb") + ("" if count == 3 else f"-{count}")
+    data = Path("data", name).resolve()
+    previous = read("settings.json") if (ROOT / "settings.json").exists() else None
+    if previous and previous["synthetic"] != synthetic:
         raise ValueError(
             "This demo is configured for another dataset; use its original setup mode."
         )
@@ -139,12 +171,12 @@ def setup(synthetic):
     )
     if synthetic:
         if not (data / "manifest.json").exists():
-            prepare(data, rows=6000)
+            prepare(data, rows=6000, banks=count)
         manifest = read_manifest(data)
-        if not manifest["synthetic"] or manifest["banks"] != 3:
-            raise ValueError("Demo synthetic dataset must contain three synthetic banks.")
+        if not manifest["synthetic"] or manifest["banks"] != count:
+            raise ValueError(f"Demo synthetic dataset must contain {count} synthetic banks.")
     else:
-        setup_data(Path("data/raw"), data)
+        setup_data(Path("data/raw"), data, banks=count)
     print("Building the training image. First setup can take several minutes.", flush=True)
     command("docker", "build", "-t", IMAGE, ".")
     config = {
@@ -172,7 +204,9 @@ def setup(synthetic):
         command(
             "kind", "export", "kubeconfig", "--name", CLUSTER, "--kubeconfig", ROOT / "kubeconfig"
         )
+        mounted = previous.get("mounted", previous["data"])
     else:
+        mounted = str(data)
         command(
             "kind",
             "create",
@@ -186,23 +220,39 @@ def setup(synthetic):
             "--wait",
             "120s",
         )
-    save("settings.json", {"data": str(data), "synthetic": synthetic})
+    save(
+        "settings.json",
+        {"data": str(data), "synthetic": synthetic, "banks": count, "mounted": mounted},
+    )
     command("kind", "load", "docker-image", IMAGE, "--name", CLUSTER)
-    # Use the checked-in deployment; only the image changes for the demo.
-    documents = list(yaml.safe_load_all(Path("k8s/deployment.yaml").read_text()))
-    for document in documents:
-        if document["kind"] == "Deployment":
-            pod = document["spec"]["template"]["spec"]
-        elif document["kind"] == "CronJob":
-            pod = document["spec"]["jobTemplate"]["spec"]["template"]["spec"]
-        else:
-            continue
-        pod["containers"][0]["image"] = IMAGE
+    if str(data) == mounted:
+        host_data = "/mnt/bank-fl"
+    else:
+        # The node's data mount is fixed when the cluster is created. A different bank
+        # count uses a different dataset, so copy it into the node instead of recreating
+        # the cluster, which would discard the saved runs on its results volume.
+        host_data = f"/mnt/{data.name}"
+        node = f"{CLUSTER}-control-plane"
+        command("docker", "exec", node, "rm", "-rf", host_data)
+        command("docker", "cp", data, f"{node}:{host_data}")
+        command("docker", "exec", node, "chmod", "-R", "a+rX", host_data)
+    # Same generator as the checked-in k8s/deployment.yaml; only the image, bank count
+    # and data path change for the demo.
     deployment = ROOT / "deployment.yaml"
-    deployment.write_text(yaml.safe_dump_all(documents), encoding="utf-8")
+    command(
+        sys.executable,
+        "k8s/render.py",
+        *("--banks", count, "--image", IMAGE, "--host-data", host_data),
+        *("--output", deployment),
+        capture=True,
+    )
     kubectl("apply", "-f", deployment)
+    # Applying a smaller deployment does not remove a larger one's extra banks.
+    extra = [f"bank-{i}" for i in range(count + 1, max(BANK_COUNTS) + 1)]
+    if extra:
+        kubectl("delete", "deployment", *extra, "--ignore-not-found")
     kubectl("rollout", "restart", "deployment")
-    for name in WORKLOADS:
+    for name in workloads(count):
         kubectl("rollout", "status", f"deployment/{name}", "--timeout=180s")
     # metrics-server feeds per-pod CPU/memory to the dashboard and resources.csv. Training
     # does not depend on it, so a failed install (e.g. its image cannot be pulled) only warns.
@@ -216,7 +266,7 @@ def setup(synthetic):
         )
     except subprocess.CalledProcessError:
         print("Warning: metrics-server is not ready; pod CPU/memory will not be recorded.")
-    print("Ready. Run: uv run bank-fl demo start", flush=True)
+    print(f"Ready with {count} banks. Run: uv run bank-fl demo start", flush=True)
 
 
 def collect():
@@ -243,10 +293,10 @@ def collect():
         for number, recovery in enumerate(summarize_all(directory, finished)["faults"], 1):
             seconds = recovery["fault_to_accepted_update_seconds"]
             print(
-                f"Kill {number}: {recovery['bank']} contributed again after {seconds:.1f}s."
+                f"Failure {number}: {recovery['bank']} contributed again after {seconds:.1f}s."
                 if seconds is not None
-                else f"Kill {number}: {recovery['bank']} was not seen contributing again "
-                "before training ended or its next kill."
+                else f"Failure {number}: {recovery['bank']} was not seen contributing again "
+                "before training ended or its next failure."
             )
     samples = Path(state["output"]) / "resources.csv"
     usage = summarize_resources(samples) if samples.exists() else {}
@@ -281,12 +331,14 @@ def start(rounds, deadline, mu=0.0):
     # Reserve a non-default control port; never attach to an unrelated listener.
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", PORT))
+    count = banks()
+    quorum = count // 2 + 1  # a majority: 2 of 3, 3 of 5
     kubectl(
         "wait",
         "--for=condition=Ready",
         "pod",
         "-l",
-        f"app in ({','.join(WORKLOADS)})",
+        f"app in ({','.join(workloads(count))})",
         "--timeout=120s",
     )
     pods = json.loads(kubectl("get", "pods", "-l", "app=coordinator", "-o", "json", capture=True))
@@ -327,7 +379,8 @@ def start(rounds, deadline, mu=0.0):
                 except OSError:
                     time.sleep(0.2)
             print(
-                "Three banks, quorum 2. Wait for a few commits, then in another terminal run:\n"
+                f"{count} banks, quorum {quorum}. Wait for a few commits, then in another "
+                "terminal run:\n"
                 "  uv run bank-fl demo fail\n",
                 flush=True,
             )
@@ -347,7 +400,8 @@ def start(rounds, deadline, mu=0.0):
                     "demo",
                     "--stream",
                     "--run-config",
-                    f'rounds={rounds} deadline={deadline} mu={float(mu)} label="demo"',
+                    f"rounds={rounds} deadline={deadline} mu={float(mu)} "
+                    f'banks={count} quorum={quorum} label="demo"',
                 ],
                 env=environment(),
                 stdout=subprocess.PIPE,
@@ -381,7 +435,11 @@ def start(rounds, deadline, mu=0.0):
     collect()
 
 
-def fail(bank):
+def fail(bank, kind="kill", duration=OUTAGE_SECONDS):
+    if bank not in bank_ids():
+        raise ValueError(f"bank must be one of: {', '.join(bank_ids())}")
+    if kind not in ("kill", "absence"):
+        raise ValueError("kind must be kill or absence")
     if not active():
         raise ValueError("Start the demo and wait for training commits before triggering a fault.")
     state = read("latest.json")
@@ -398,14 +456,18 @@ def fail(bank):
             json.dump({"bank": bank, "unix_time": time.time(), "status": "starting"}, stream)
     except FileExistsError as exc:
         raise ValueError("Another bank failure is being injected right now.") from exc
-    print(f"Terminating {bank}'s pod. The other banks can keep training.", flush=True)
+    print(
+        f"Terminating {bank}'s pod. The other banks can keep training."
+        if kind == "kill"
+        else f"Taking {bank} offline for {duration:g} s. The other banks can keep training.",
+        flush=True,
+    )
     try:
         command(
             sys.executable,
             "-m",
             "experiments.fault",
-            "--kind",
-            "kill",
+            *("--kind", kind, "--duration", duration),
             "--bank",
             bank,
             "--output",
@@ -439,11 +501,11 @@ def dispatch(args):
         if args.action == "setup":
             if active():
                 raise ValueError("Wait for the active demo to finish before setup.")
-            setup(args.synthetic)
+            setup(args.synthetic, args.banks)
         elif args.action == "start":
             start(args.rounds, args.deadline, args.mu)
         elif args.action == "fail":
-            fail(args.bank)
+            fail(args.bank, args.kind, args.duration)
         elif args.action == "results":
             if active():
                 raise ValueError("Wait for training to finish before collecting results.")

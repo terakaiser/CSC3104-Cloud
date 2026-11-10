@@ -30,3 +30,14 @@ def test_weekly_retraining_never_overlaps_and_needs_no_data_mounts():
     assert pod["automountServiceAccountToken"] is False
     assert "volumes" not in pod
     assert pod["containers"][0]["command"][:3] == ["python", "-m", "app.scheduled"]
+
+
+def test_five_bank_deployment_tells_scheduled_runs_the_bank_count_and_data_path():
+    resources = manifests(5, host_data="/mnt/ulb-5")
+    (cronjob,) = [r for r in resources if r["kind"] == "CronJob"]
+    command = cronjob["spec"]["jobTemplate"]["spec"]["template"]["spec"]["containers"][0]["command"]
+    assert command[command.index("--banks") + 1] == "5"
+    bank5 = next(r for r in resources if r["metadata"]["name"] == "bank-5")
+    assert bank5["spec"]["template"]["spec"]["volumes"][0]["hostPath"]["path"] == (
+        "/mnt/ulb-5/bank-5"
+    )
