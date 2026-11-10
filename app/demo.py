@@ -21,6 +21,7 @@ from app.resources import summarize as summarize_resources
 ROOT = Path(".demo")
 CLUSTER = "bank-fl-demo"
 IMAGE = "bank-fl:demo"
+KUBECTL = ("kubectl", "--context", f"kind-{CLUSTER}")  # never the user's other clusters
 PORT = 19093
 BANK_COUNTS = (3, 5)  # deployments the demo can set up
 OUTAGE_SECONDS = 20.0  # how long a "temporary outage" keeps a bank offline
@@ -76,6 +77,15 @@ def fault_finished(path: Path):
     return record.get("status", "ready") in FINAL_FAULT_STATES
 
 
+def add_skew_argument(parser):
+    parser.add_argument(
+        "--skew",
+        type=float,
+        default=1.0,
+        help="how different the banks are: 0 identical, 1 standard, higher = less overlap",
+    )
+
+
 def add_parser(commands):
     parser = commands.add_parser("demo", help="prepare and present the Kubernetes demo")
     actions = parser.add_subparsers(dest="action", required=True)
@@ -84,12 +94,7 @@ def add_parser(commands):
     setup.add_argument(
         "--banks", type=int, choices=BANK_COUNTS, default=3, help="number of bank pods"
     )
-    setup.add_argument(
-        "--skew",
-        type=float,
-        default=1.0,
-        help="how different the banks are: 0 identical, 1 standard, higher = less overlap",
-    )
+    add_skew_argument(setup)
     start = actions.add_parser("start", help="train, stream progress, and export/evaluate results")
     start.add_argument("--rounds", type=int, default=30)
     start.add_argument("--deadline", type=float, default=30)
@@ -134,9 +139,7 @@ def command(*args, capture=False):
 
 
 def kubectl(*args, capture=False):
-    return command(
-        "kubectl", "--context", f"kind-{CLUSTER}", "-n", "bank-fl", *args, capture=capture
-    )
+    return command(*KUBECTL, "-n", "bank-fl", *args, capture=capture)
 
 
 def save(name, value):
@@ -281,11 +284,10 @@ def setup(synthetic, count=3, skew=1.0):
         kubectl("rollout", "status", f"deployment/{name}", "--timeout=180s")
     # metrics-server feeds per-pod CPU/memory to the dashboard and resources.csv. Training
     # does not depend on it, so a failed install (e.g. its image cannot be pulled) only warns.
-    cluster = ("kubectl", "--context", f"kind-{CLUSTER}")
     try:
-        command(*cluster, "apply", "-f", "k8s/metrics-server.yaml")
+        command(*KUBECTL, "apply", "-f", "k8s/metrics-server.yaml")
         command(
-            *cluster,
+            *KUBECTL,
             *("-n", "kube-system", "rollout", "status", "deployment/metrics-server"),
             "--timeout=180s",
         )
@@ -347,7 +349,7 @@ def collect():
 
 
 def start(rounds, deadline, mu=0.0):
-    from app.config import RunConfig
+    from app.config import RunConfig, majority
 
     RunConfig(rounds=rounds, deadline=deadline, mu=mu)
     read("settings.json")
@@ -357,7 +359,7 @@ def start(rounds, deadline, mu=0.0):
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", PORT))
     count = banks()
-    quorum = count // 2 + 1  # a majority: 2 of 3, 3 of 5
+    quorum = majority(count)
     kubectl(
         "wait",
         "--for=condition=Ready",
@@ -379,16 +381,10 @@ def start(rounds, deadline, mu=0.0):
         with (ROOT / "forward.log").open("w") as log:
             forward = subprocess.Popen(
                 [
-                    "kubectl",
-                    "--context",
-                    f"kind-{CLUSTER}",
-                    "-n",
-                    "bank-fl",
-                    "port-forward",
-                    "service/coordinator",
+                    *KUBECTL,
+                    *("-n", "bank-fl", "port-forward", "service/coordinator"),
                     f"{PORT}:9093",
-                    "--address",
-                    "127.0.0.1",
+                    *("--address", "127.0.0.1"),
                 ],
                 env=environment(),
                 stdout=log,
@@ -460,11 +456,15 @@ def start(rounds, deadline, mu=0.0):
     collect()
 
 
-def fail(bank, kind="kill", duration=OUTAGE_SECONDS):
+def check_fault(bank, kind):
     if bank not in bank_ids():
         raise ValueError(f"bank must be one of: {', '.join(bank_ids())}")
     if kind not in ("kill", "absence"):
         raise ValueError("kind must be kill or absence")
+
+
+def fail(bank, kind="kill", duration=OUTAGE_SECONDS):
+    check_fault(bank, kind)
     if not active():
         raise ValueError("Start the demo and wait for training commits before triggering a fault.")
     state = read("latest.json")

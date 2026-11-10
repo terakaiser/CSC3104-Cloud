@@ -45,7 +45,7 @@ def main(argv=None):
         prog="bank-fl", description="Client-resilient federated fraud learning"
     )
     commands = parser.add_subparsers(dest="command", required=True)
-    from app.demo import add_parser
+    from app.demo import add_parser, add_skew_argument
 
     add_parser(commands)
     setup = commands.add_parser("setup-data", help="download and prepare the real ULB dataset")
@@ -53,12 +53,7 @@ def main(argv=None):
     setup.add_argument("--output", type=Path, default=Path("data/ulb"))
     setup.add_argument("--banks", type=int, default=3)
     setup.add_argument("--seed", type=int, default=42)
-    setup.add_argument(
-        "--skew",
-        type=float,
-        default=1.0,
-        help="how different the banks are: 0 identical, 1 standard, higher = less overlap",
-    )
+    add_skew_argument(setup)
     prepare_cmd = commands.add_parser(
         "prepare", help="prepare real CSV or synthetic test partitions"
     )
@@ -69,12 +64,7 @@ def main(argv=None):
     prepare_cmd.add_argument("--rows", type=int, default=6000)
     prepare_cmd.add_argument("--banks", type=int, default=3)
     prepare_cmd.add_argument("--seed", type=int, default=42)
-    prepare_cmd.add_argument(
-        "--skew",
-        type=float,
-        default=1.0,
-        help="how different the banks are: 0 identical, 1 standard, higher = less overlap",
-    )
+    add_skew_argument(prepare_cmd)
     for name, help_text in [
         ("run", "run the concurrent local harness"),
         ("flower", "launch a real local Flower federation, run, and clean up its processes"),

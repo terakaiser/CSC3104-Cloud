@@ -72,9 +72,10 @@ class RunLog:
             ],
         )
         self.writer.writeheader()
-        versions = {}
-        for package in ("flwr", "torch", "numpy", "scikit-learn", "pandas"):
-            versions[package] = importlib.metadata.version(package)
+        versions = {
+            package: importlib.metadata.version(package)
+            for package in ("flwr", "torch", "numpy", "scikit-learn", "pandas")
+        }
         write_json(
             self.directory / "run.json",
             {

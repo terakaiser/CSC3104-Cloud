@@ -189,7 +189,7 @@ def plot_resources(directory: Path, faults=()):
         for ax in axes:
             ax.axvline(fault["unix_time"] - started, color="red", linestyle="--", alpha=0.6)
         axes[0].annotate(
-            f"{fault['bank']} killed",
+            f"{fault['bank']} {'offline' if fault.get('kind') == 'absence' else 'killed'}",
             (fault["unix_time"] - started, axes[0].get_ylim()[1]),
             fontsize=7,
             color="red",

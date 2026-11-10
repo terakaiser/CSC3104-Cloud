@@ -33,6 +33,20 @@ class Reply:
     error: str | None = None
 
 
+def error_reply(request: Request, text: str) -> Reply:
+    """A failed reply to `request`: no weights, no samples, only the reason."""
+    return Reply(
+        request.run_id,
+        request.attempt,
+        request.version,
+        request.bank_id,
+        request.request_id,
+        [],
+        0,
+        error=text,
+    )
+
+
 def payload_bytes(weights: Weights) -> int:
     """Tensor payload only; excludes envelope, protocol, and network overhead."""
     return sum(a.nbytes for a in weights)

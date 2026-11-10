@@ -67,7 +67,6 @@ def inject(bank: str, kind: str, duration: float, timeout: float, output: Path):
                 time.sleep(duration)
             finally:
                 kubectl("scale", "deployment", bank, f"--replicas={original_replicas}")
-        record["fault_to_ready_seconds"] = None
         record["status"] = "waiting_for_replacement"
         save_record()
         until = time.monotonic() + timeout

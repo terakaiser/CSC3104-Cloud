@@ -18,7 +18,6 @@ from urllib.parse import parse_qs, urlsplit
 import psutil
 
 from app import demo
-from app.data import replace_file
 from app.resources import pod_usage
 
 RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -313,16 +312,13 @@ def launch_training(rounds, deadline, mu):
             raise RuntimeError(
                 f"Training process exited during startup (code {exit_code}): {detail or exc}"
             ) from exc
-        state = {"pid": process.pid, "created": created}
-        temporary = TRAINING_STATE.with_suffix(".tmp")
-        temporary.write_text(json.dumps(state), encoding="utf-8")
-        replace_file(temporary, TRAINING_STATE)
+        demo.save(TRAINING_STATE.name, {"pid": process.pid, "created": created})
     return {"status": "starting", "pid": process.pid}
 
 
 def _kubectl(*args):
     result = subprocess.run(
-        ["kubectl", "--context", f"kind-{demo.CLUSTER}", "-n", "bank-fl", *args],
+        [*demo.KUBECTL, "-n", "bank-fl", *args],
         check=False,
         capture_output=True,
         text=True,
@@ -399,13 +395,13 @@ def _kubernetes():
                 }
             )
         elif kind == "Deployment":
-            spec, deployment_status = item.get("spec", {}), status
+            spec = item.get("spec", {})
             deployments.append(
                 {
                     "name": name,
                     "desired": spec.get("replicas", 1),
-                    "ready": deployment_status.get("readyReplicas", 0),
-                    "available": deployment_status.get("availableReplicas", 0),
+                    "ready": status.get("readyReplicas", 0),
+                    "available": status.get("availableReplicas", 0),
                     "images": [
                         container.get("image", "")
                         for container in spec.get("template", {})
@@ -694,10 +690,7 @@ def _alerts(kubernetes, run, prepared):
 
 
 def simulate_self_healing(bank, kind="kill"):
-    if bank not in demo.bank_ids():
-        raise ValueError(f"bank must be one of: {', '.join(demo.bank_ids())}")
-    if kind not in ("kill", "absence"):
-        raise ValueError("kind must be kill or absence")
+    demo.check_fault(bank, kind)
     if not demo.active():
         raise RuntimeError("Start a training run before simulating self-healing.")
     # Raises ValueError while the previous failure is still recovering.
@@ -724,22 +717,16 @@ def dashboard_data(selected_run=None):
         active_error = str(exc)
     run_paths, latest = _run_ids()
     active_id = latest.get("run_id") if demo_active else None
-    remote_files = {}
+    # While a run is live its files are still in the coordinator pod, not exported yet.
+    remote = (_read_remote_run(latest) if demo_active else None) or {}
+    remote_files = remote.get("files", {})
     if demo_active and not active_id:
-        remote = _read_remote_run(latest)
-        active_id = remote.get("run_id") if remote else None
-        if remote:
-            remote_files = remote.get("files", {})
-        if active_id:
-            if RUN_ID_PATTERN.fullmatch(active_id):
-                latest["run_id"] = active_id
-                run_paths.setdefault(active_id, Path(latest.get("output", RESULTS)) / active_id)
-            else:
-                active_id = None
-    elif demo_active and latest.get("pod"):
-        remote = _read_remote_run(latest)
-        if remote:
-            remote_files = remote.get("files", {})
+        active_id = remote.get("run_id")
+        if active_id and RUN_ID_PATTERN.fullmatch(active_id):
+            latest["run_id"] = active_id
+            run_paths.setdefault(active_id, Path(latest.get("output", RESULTS)) / active_id)
+        else:
+            active_id = None
     ordered = sorted(
         run_paths,
         key=lambda run_id: run_paths[run_id].stat().st_mtime if run_paths[run_id].exists() else 0,
@@ -778,31 +765,18 @@ def dashboard_data(selected_run=None):
             "latest_attempt": 0,
         }
     )
+    no_cluster = {
+        "available": False,
+        "pods": [],
+        "deployments": [],
+        "services": [],
+        "events": [],
+        "logs": "",
+    }
     try:
-        kubernetes = (
-            _kubernetes()
-            if prepared
-            else {
-                "available": False,
-                "pods": [],
-                "deployments": [],
-                "services": [],
-                "events": [],
-                "logs": "",
-            }
-        )
-        kubernetes_error = None
+        kubernetes = _kubernetes() if prepared else no_cluster
     except (OSError, RuntimeError, subprocess.TimeoutExpired, json.JSONDecodeError) as exc:
-        kubernetes_error = str(exc)
-        kubernetes = {
-            "available": False,
-            "error": kubernetes_error,
-            "pods": [],
-            "deployments": [],
-            "services": [],
-            "events": [],
-            "logs": "",
-        }
+        kubernetes = {**no_cluster, "error": str(exc)}
     alerts = _alerts(kubernetes, run, prepared)
     if active_error:
         alerts.append(

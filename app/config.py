@@ -3,6 +3,11 @@ from dataclasses import asdict, dataclass
 from typing import Literal
 
 
+def majority(banks: int) -> int:
+    """Smallest quorum that is more than half the banks: 2 of 3, 3 of 5."""
+    return banks // 2 + 1
+
+
 @dataclass(frozen=True)
 class RunConfig:
     mode: Literal["resilient", "synchronous", "timeout"] = "resilient"
@@ -50,10 +55,12 @@ class RunConfig:
             if getattr(self, key) < 1:
                 raise ValueError(f"{key} must be positive")
         for key in ("deadline", "startup_timeout", "poll_interval", "learning_rate"):
-            if not math.isfinite(getattr(self, key)) or getattr(self, key) <= 0:
+            value = getattr(self, key)
+            if not math.isfinite(value) or value <= 0:
                 raise ValueError(f"{key} must be finite and positive")
         for key in ("delay", "mu", "grace"):
-            if getattr(self, key) < 0 or not math.isfinite(getattr(self, key)):
+            value = getattr(self, key)
+            if value < 0 or not math.isfinite(value):
                 raise ValueError(f"{key} must be finite and non-negative")
         if self.scenario not in {"healthy", "slow", "stale", "unavailable"}:
             raise ValueError("unknown training scenario")

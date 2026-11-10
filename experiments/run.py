@@ -6,7 +6,7 @@ from pathlib import Path
 import torch
 import yaml
 
-from app.config import RunConfig
+from app.config import RunConfig, majority
 from app.coordinator import run
 from app.data import read_manifest
 from app.local import LocalTransport
@@ -28,7 +28,7 @@ def main():
     settings = yaml.safe_load(args.config.read_text(encoding="utf-8"))
     manifest = read_manifest(args.data)
     banks = manifest["banks"]
-    quorum = banks // 2 + 1
+    quorum = majority(banks)
     directories = []
     for seed in settings["seeds"]:
         base = dict(
@@ -54,7 +54,11 @@ def main():
                     label=f"{scenario}-{seed}",
                 )
                 if args.runtime == "flower":
-                    directory = launch(config, args.data, args.output)
+                    try:
+                        directory = launch(config, args.data, args.output)
+                    except TimeoutError as error:  # one SuperLink stall used to end the whole study
+                        print(f"Retrying {config.label} {mode}: {error}", flush=True)
+                        directory = launch(config, args.data, args.output)
                 else:
                     absent = [config.slow_bank] if scenario == "unavailable" else []
                     directory = run(

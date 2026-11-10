@@ -78,8 +78,9 @@ def partition_indices(frame, indices, banks, rng, skew=1.0):
 
 
 def prepare(output: Path, *, csv: Path | None = None, rows=6000, banks=3, seed=42, skew=1.0):
-    if not np.isfinite(skew) or skew < 0:
-        raise ValueError("skew must be finite and non-negative")
+    # The upper limit keeps the skew exponent far from float overflow; NaN fails it too.
+    if not 0 <= skew <= 50:
+        raise ValueError("skew must be between 0 and 50")
     if not 2 <= banks <= 10:
         raise ValueError("banks must be between 2 and 10")
     if output.exists() and any(output.iterdir()):
@@ -114,11 +115,8 @@ def prepare(output: Path, *, csv: Path | None = None, rows=6000, banks=3, seed=4
             if len(indices) == 0 or np.unique(y[indices]).size != 2:
                 raise ValueError(f"{name}/bank-{i + 1} lacks both classes; use more data")
     output.mkdir(parents=True, exist_ok=True)
-    checksum = (
-        hashlib.sha256(csv.read_bytes()).hexdigest()
-        if csv
-        else hashlib.sha256(frame.to_csv(index=False).encode()).hexdigest()
-    )
+    source_bytes = csv.read_bytes() if csv else frame.to_csv(index=False).encode()
+    checksum = hashlib.sha256(source_bytes).hexdigest()
     manifest = {
         "schema": 1,
         "source": "ULB-compatible CSV" if csv else "SYNTHETIC SOFTWARE TEST DATA",

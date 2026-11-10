@@ -1,7 +1,7 @@
 import json
 
 from app.data import write_json
-from experiments.recovery import summarize, summarize_all
+from experiments.recovery import summarize_all
 
 
 def test_buffered_pre_fault_response_is_not_recovery(tmp_path):
@@ -28,14 +28,14 @@ def test_buffered_pre_fault_response_is_not_recovery(tmp_path):
     )
     fault = tmp_path / "fault.json"
     write_json(fault, {"bank": "bank-3", "unix_time": 100, "fault_to_ready_seconds": 10})
-    assert summarize(tmp_path, fault)["fault_to_accepted_update_seconds"] == 18
+    assert summarize_all(tmp_path, [fault])["fault_to_accepted_update_seconds"] == 18
 
 
 def test_no_ready_pod_is_censored(tmp_path):
     (tmp_path / "events.jsonl").write_text("", encoding="utf-8")
     fault = tmp_path / "fault.json"
     write_json(fault, {"bank": "bank-3", "unix_time": 100, "fault_to_ready_seconds": None})
-    assert summarize(tmp_path, fault)["participation_recovery_censored"]
+    assert summarize_all(tmp_path, [fault])["participation_recovery_censored"]
 
 
 def test_each_kill_gets_its_own_recovery_and_a_rekill_cuts_the_earlier_one_off(tmp_path):

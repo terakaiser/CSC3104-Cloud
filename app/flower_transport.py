@@ -6,7 +6,7 @@ import time
 from flwr.common import ArrayRecord, ConfigRecord, Message, RecordDict
 
 from app.config import RunConfig
-from app.protocol import Reply, Request
+from app.protocol import Reply, Request, error_reply
 
 
 def request_content(request: Request):
@@ -122,19 +122,6 @@ class FlowerTransport:
         self._discover()
         return set(self.nodes)
 
-    @staticmethod
-    def _error(request, text):
-        return Reply(
-            request.run_id,
-            request.attempt,
-            request.version,
-            request.bank_id,
-            request.request_id,
-            [],
-            0,
-            error=text,
-        )
-
     def submit(self, request):
         node = self.nodes.get(request.bank_id)
         if node is None or any(
@@ -175,18 +162,18 @@ class FlowerTransport:
                 elif original_id in self.pending:
                     request, node, _ = self.pending.pop(original_id)
                     if message.has_error():
-                        replies.append(self._error(request, str(message.error)))
+                        replies.append(error_reply(request, str(message.error)))
                         continue
                     if message.metadata.src_node_id != node:
-                        replies.append(self._error(request, "wrong source node"))
+                        replies.append(error_reply(request, "wrong source node"))
                         continue
                     try:
                         reply = decode_reply(message.content)
                         if reply.bank_id != request.bank_id:
-                            reply = self._error(request, "bank identity mismatch")
+                            reply = error_reply(request, "bank identity mismatch")
                         replies.append(reply)
                     except (KeyError, TypeError, ValueError) as exc:
-                        replies.append(self._error(request, f"malformed reply: {exc}"))
+                        replies.append(error_reply(request, f"malformed reply: {exc}"))
         now = time.monotonic()
         for key, (_, expires) in list(self.identifying.items()):
             if now >= expires:
@@ -194,7 +181,7 @@ class FlowerTransport:
         for key, (request, _, expires) in list(self.pending.items()):
             if now >= expires:
                 del self.pending[key]
-                replies.append(self._error(request, "transport TTL expired"))
+                replies.append(error_reply(request, "transport TTL expired"))
         return replies
 
     def close(self):

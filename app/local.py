@@ -3,7 +3,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from app.protocol import Reply, Request
+from app.protocol import Request, error_reply
 from app.worker import execute
 
 
@@ -35,18 +35,7 @@ class LocalTransport:
             try:
                 replies.append(future.result())
             except Exception as exc:
-                replies.append(
-                    Reply(
-                        request.run_id,
-                        request.attempt,
-                        request.version,
-                        bank,
-                        request.request_id,
-                        [],
-                        0,
-                        error=f"{type(exc).__name__}: {exc}",
-                    )
-                )
+                replies.append(error_reply(request, f"{type(exc).__name__}: {exc}"))
         return replies
 
     def close(self):

@@ -62,7 +62,7 @@ def test_every_bank_keeps_both_classes_even_at_high_skew(tmp_path):
         assert all(bank["fraud"] > 0 and bank["samples"] > bank["fraud"] for bank in split.values())
 
 
-@pytest.mark.parametrize("skew", [-1, float("nan"), float("inf")])
+@pytest.mark.parametrize("skew", [-1, float("nan"), float("inf"), 10000])
 def test_invalid_skew_is_rejected_before_output(tmp_path, skew):
     with pytest.raises(ValueError, match="skew"):
         prepare(tmp_path / "bad", rows=6000, skew=skew)

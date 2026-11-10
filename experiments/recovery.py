@@ -46,12 +46,6 @@ def _recovery(fault, events, until=float("inf")):
     }
 
 
-def summarize(directory: Path, fault_path: Path):
-    result = _recovery(json.loads(fault_path.read_text(encoding="utf-8")), _events(directory))
-    write_json(directory / "recovery.json", result)
-    return result
-
-
 def summarize_all(directory: Path, fault_paths: list[Path]):
     """Recovery for every kill in a run, written to one recovery.json."""
     events = _events(directory)

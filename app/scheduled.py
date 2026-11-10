@@ -12,7 +12,7 @@ import tempfile
 from pathlib import Path
 
 from app.bundle import stage_bundle
-from app.config import RunConfig
+from app.config import RunConfig, majority
 
 
 def command(package: Path, coordinator: str, config: RunConfig):
@@ -46,7 +46,7 @@ def main(argv=None):
         deadline=args.deadline,
         mu=args.mu,
         banks=args.banks,
-        quorum=args.banks // 2 + 1,  # a majority: 2 of 3, 3 of 5
+        quorum=majority(args.banks),
     )
     root = Path(__file__).resolve().parents[1]
     with tempfile.TemporaryDirectory() as temporary:
