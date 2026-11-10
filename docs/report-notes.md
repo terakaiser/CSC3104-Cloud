@@ -229,7 +229,10 @@ or the cluster again before the report is written; copy both somewhere safe.
   bank are what make a comparison defensible. The deadline is frozen from a
   pilot before the study so it cannot be tuned to favour a mode.
 - **Evidence:** pilot rounds 22.1–24.9 s → deadline 40 s (Chee Yuan, 5 Nov). The
-  study itself is still to run (Section 6).
+  full study ran on 10–11 Nov (Section 4.1). The runner now records each
+  finished run in `progress.jsonl`, resumes an interrupted study and survives
+  a failed run, so hours of earlier runs are never lost; it also runs the
+  stale scenario and FedProx.
 
 ### 2.11 One-command demo environment (`app/demo.py`)
 - **What:** `demo setup` checks tools, prepares data, builds the image, creates a
@@ -252,7 +255,7 @@ or the cluster again before the report is written; copy both somewhere safe.
 - **Evidence:** a unit test checks that μ = 0 reproduces FedAvg exactly and that
   μ > 0 pulls local weights toward the global model (`tests/test_model.py`). Runs
   with μ = 1 (5 Nov), μ = 0.1 (6 Nov) and μ = 0.01 completed on the cluster; see
-  Section 4. Whether it improves quality is for the comparison study to answer.
+  Section 4. The comparison study found no measurable difference from FedAvg (Section 4.1).
 
 ### 3.2 Grace window for late banks (`grace`, default 3 s)
 - **What:** once 2 of 3 banks reply, the round stays open up to 3 s for the third,
@@ -500,8 +503,8 @@ or the cluster again before the report is written; copy both somewhere safe.
   code-only rebuild takes about 3 s instead of reinstalling all packages.
 - **Experiment deadline** frozen at 40 s from a healthy pilot (rounds 22.1–24.9 s
   locally) before any comparison runs (Chee Yuan).
-- **Quality checks:** 115 automated tests across 18 files (coordinator and round
-  rules 27, configuration 12, demo commands 13, dashboard 12, bank heterogeneity 9, Flower transport
+- **Quality checks:** 119 automated tests across 19 files (coordinator and round
+  rules 27, configuration 12, demo commands 13, dashboard 12, bank heterogeneity 9, study runner 2, Flower transport
   10, data and download 10, resources 4, prediction 4, recovery 3, fault 2,
   scheduling 2, deployment 2, model/FedProx 1, evaluation 1); `ruff` lint and
   formatting enforced. About 4,100 lines of application code and 1,570 lines of
@@ -510,7 +513,7 @@ or the cluster again before the report is written; copy both somewhere safe.
 
 ## 4. Results to report (Evaluation)
 
-Single runs; repeated runs are still needed before claiming differences.
+The table below lists single cluster runs. The repeated comparison is in Section 4.1.
 
 | Run (folder) | Algorithm | Rounds | Recall | Precision | F1 | AP |
 |---|---|---|---|---|---|---|
@@ -527,6 +530,91 @@ Single runs; repeated runs are still needed before claiming differences.
 - 22 Oct run recovery: replacement pod Ready in 5.3 s, first accepted update 61.5 s
   after the fault; participation 28 / 16 / 22 (before the grace window).
 
+### 4.1 Comparison study (research question 2) — 10–11 Nov
+
+- **What was run:** `python -m experiments.run --runtime flower --data data/ulb
+  --output results/study --scenarios healthy slow unavailable stale`. 36 runs:
+  3 seeds (42, 43, 44) × 12 configurations, 20 rounds each, deadline 40 s, grace
+  3 s, 3 banks at the standard split (skew 1). The faulty bank rotates with the
+  seed (bank-1, bank-2, bank-3). Real Flower processes on one laptop (one
+  SuperLink, three SuperNodes), **not** the Kubernetes cluster.
+- **Scenarios:** *healthy* (no fault); *slow* (one bank delays its round-2 reply
+  by 45 s, longer than the deadline); *unavailable* (one bank never connects);
+  *stale* (one bank's round-2 reply arrives after the model has moved on).
+- **Why:** research question 2 asks whether the resilient coordinator keeps
+  training through faults at no cost to model quality, compared with waiting
+  for everyone (synchronous) and with waiting for the deadline (timeout).
+- **Results (mean ± standard deviation over 3 seeds):**
+
+  | Scenario | Mode | Rounds done | Lost attempts | Training time (s) | Faulty bank's rounds | Recall | Precision | F1 | AP |
+  |---|---|---|---|---|---|---|---|---|---|
+  | — | Centralised (pooled data) | 20 epochs | — | 9.6 ± 0.5 | — | 0.770 ± 0.008 | 0.828 ± 0.009 | 0.798 ± 0.008 | 0.706 ± 0.016 |
+  | Healthy | Synchronous | 20 | 0 | 218.6 ± 9.2 | 20 | 0.779 ± 0.008 | 0.806 ± 0.024 | 0.792 ± 0.009 | 0.703 ± 0.007 |
+  | Healthy | Resilient (FedAvg) | 20 | 0 | 221.1 ± 9.7 | 20 | 0.779 ± 0.008 | 0.806 ± 0.024 | 0.792 ± 0.009 | 0.703 ± 0.007 |
+  | Healthy | Resilient (FedProx μ=0.1) | 20 | 0 | 210.7 ± 20.4 | 20 | 0.784 ± 0.008 | 0.792 ± 0.027 | 0.788 ± 0.016 | 0.703 ± 0.012 |
+  | Healthy | Timeout | 20 | 0 | 210.1 ± 19.9 | 20 | 0.779 ± 0.008 | 0.806 ± 0.024 | 0.792 ± 0.009 | 0.703 ± 0.007 |
+  | Slow | Synchronous | 20 | 1 | 256.0 ± 16.2 | 20 | 0.789 ± 0.000 | 0.801 ± 0.031 | 0.795 ± 0.015 | 0.707 ± 0.003 |
+  | Slow | Resilient | 20 | 0 | 204.6 ± 15.5 | 13.7 ± 0.6 | 0.779 ± 0.008 | 0.784 ± 0.028 | 0.781 ± 0.015 | 0.699 ± 0.013 |
+  | Slow | Timeout | 20 | 0 | 286.3 ± 29.5 | 18 | 0.784 ± 0.008 | 0.792 ± 0.016 | 0.788 ± 0.004 | 0.704 ± 0.006 |
+  | Unavailable | Synchronous | **0** (never starts) | — | gives up after 90 s | 0 | no model | no model | no model | no model |
+  | Unavailable | Resilient | 20 | 0 | 184.8 ± 13.5 | 0 | 0.775 ± 0.014 | 0.798 ± 0.027 | 0.786 ± 0.007 | 0.694 ± 0.012 |
+  | Stale | Synchronous | 20 | 1 | 240.3 ± 21.3 | 20 | 0.789 ± 0.000 | 0.801 ± 0.031 | 0.795 ± 0.015 | 0.707 ± 0.003 |
+  | Stale | Resilient | 20 | 0 | 208.8 ± 17.7 | 19 | 0.779 ± 0.008 | 0.806 ± 0.024 | 0.792 ± 0.012 | 0.701 ± 0.010 |
+
+  Figures: `results/study/figures/comparison.png` and `systems.png` (the axis
+  labels are crowded with 12 configurations; redraw a smaller chart for the
+  article). Raw list of runs: `results/study/progress.jsonl`.
+- **What the numbers say (answer to RQ2):**
+  - **A missing bank stops synchronous training completely.** In all 3 seeds it
+    never started (0 rounds, gave up after the 90 s startup limit). Resilient
+    finished 20/20 rounds with the other two banks in every seed, and its
+    quality (F1 0.786 ± 0.007, AP 0.694 ± 0.012) is within one standard
+    deviation of the healthy runs. This is the strongest result in the project.
+  - **A slow bank costs resilient mode nothing in time.** Round 2 took
+    11.0–13.0 s in resilient mode, against a full 40 s lost attempt in
+    synchronous mode and two 40 s rounds in timeout mode. Total time: resilient
+    204.6 s, synchronous 256.0 s (+25%), timeout 286.3 s (+40%).
+  - **The cost of resilience is participation, not accuracy.** One 45 s delay
+    kept the slow bank out of 6–7 of 20 rounds in resilient mode (13, 14, 14
+    rounds), because its late reply is rejected as stale and it rejoins at the
+    next round. Timeout mode lost it for 2 rounds; synchronous for none. Final
+    quality did not measurably suffer (F1 0.781 ± 0.015 vs 0.795 ± 0.015; the
+    ranges overlap). Report this trade-off openly: it is the fairness
+    limitation already noted in `docs/design.md`.
+  - **When nothing fails, the mode does not matter.** Healthy synchronous,
+    resilient and timeout runs gave identical fraud results for each seed (same
+    caught frauds and false alarms: 55/11, 55/14, 56/15), because with the grace
+    window all three banks are in every round. Times differ by less than the
+    spread between seeds.
+  - **Stale updates are rejected safely.** Exactly one stale reply was rejected
+    in every stale and slow run, and no run aggregated one. Synchronous pays one
+    lost 40 s attempt for it; resilient pays nothing.
+  - **Federated matches centralised.** Healthy federated F1 0.792 ± 0.009 and
+    AP 0.703 ± 0.007 against centralised 0.798 ± 0.008 and 0.706 ± 0.016. The
+    difference is smaller than the spread between seeds. Centralised is far
+    faster (about 10 s) but needs all banks' data in one place, which is the
+    thing federated learning avoids.
+  - **FedProx (μ = 0.1) made no measurable difference** to FedAvg at the
+    standard split: AP 0.703 ± 0.012 vs 0.703 ± 0.007, F1 0.788 vs 0.792. It
+    remains a setting, not a claimed improvement (consistent with Section 3.8).
+- **A disturbance, reported for honesty:** in the first pass, four consecutive
+  seed-44 runs between 00:50 and 01:10 on 11 Nov stalled: in two no bank
+  connected within 90 s, and in two all three banks went silent together from
+  round 8, including a *healthy* run. Every run before and after was normal,
+  so this was the laptop, not the algorithm; the cause was not identified (no
+  sleep event in the Windows log). Those four runs were repeated and completed
+  normally; the table uses the repeats. The originals are kept and listed in
+  `results/study/disturbed.jsonl`, and the untouched first-pass list is
+  `results/study/progress-first-pass.jsonl`. Useful side note: in the stalled
+  runs the coordinator stopped cleanly with `insufficient_quorum` after three
+  failed attempts instead of hanging.
+- **Caveats:** 3 seeds; 71 test frauds, so one fraud is 1.4% of recall; local
+  processes with no CPU limits, so rounds are about 10 s here against about
+  12 s on the cluster and absolute times are not comparable with the cluster
+  runs; one fault per run at a fixed round; the faults are injected by the
+  harness (a delay, an absent process), while pod deletion and outages are
+  measured separately on Kubernetes (Sections 3.5 and 3.7).
+
 ## 5. Limitations (state these explicitly)
 
 - Simulated banks from one public dataset; bank "personas" are amount-based splits.
@@ -540,7 +628,6 @@ Single runs; repeated runs are still needed before claiming differences.
 
 | Item | Purpose |
 |---|---|
-| Comparison study (resilient / synchronous / timeout / centralised, FedAvg vs FedProx, 3 seeds) | Main Evaluation graphs; several hours of compute |
 | Full clean-clone test + `GROUP18_INSTRUCTIONS.pdf` | Required submission; proves it works beyond our laptops |
 
 ## 7. Who built what (from the git history; map usernames to real names)
