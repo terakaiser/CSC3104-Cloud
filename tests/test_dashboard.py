@@ -72,8 +72,20 @@ def test_kubernetes_snapshot_summarizes_workloads_and_logs(monkeypatch):
     }
     calls = []
 
+    metrics = {
+        "items": [
+            {
+                "metadata": {"name": "bank-1-abc", "labels": {"app": "bank-1"}},
+                "timestamp": "2026-11-10T08:00:00Z",
+                "containers": [{"usage": {"cpu": "125m", "memory": "210Mi"}}],
+            }
+        ]
+    }
+
     def kubectl(*args):
         calls.append(args)
+        if args[:2] == ("get", "--raw"):
+            return json.dumps(metrics)
         if args[0] == "get":
             return json.dumps(payload)
         return "\x1b[92mpod log line\x1b[0m\n"
@@ -89,7 +101,9 @@ def test_kubernetes_snapshot_summarizes_workloads_and_logs(monkeypatch):
     assert result["events"][0]["reason"] == "BackOff"
     assert result["events"][0]["time"] == "2026-10-25 18:00:00 SGT"
     assert result["logs"] == "pod log line"
-    assert len(calls) == 2
+    assert result["pods"][0]["cpu_millicores"] == 125
+    assert result["pods"][0]["memory_mib"] == 210
+    assert len(calls) == 3
 
 
 def test_event_timestamp_conversion_is_dynamic_and_handles_offsets():

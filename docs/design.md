@@ -94,6 +94,21 @@ prototype's bank data is fixed; a real deployment would load each bank's latest
 labelled transactions. The CronJob does not coordinate with manually started
 runs, so operators should not start a demo run during a scheduled one.
 
+## Resource measurement
+
+`demo setup` installs Kubernetes metrics-server from a pinned manifest
+(`k8s/metrics-server.yaml`, v0.9.1, with `--kubelet-insecure-tls` because kind's
+kubelet certificates are self-signed). During a demo run, `app/resources.py` reads
+the metrics API every 5 s and records each new per-pod CPU and memory measurement
+to `resources.csv`; metrics-server itself refreshes about every 15 s, so that is
+the real resolution. After the run, `resources.json` holds the mean and peak per
+role and `figures/resources.png` plots them with kills marked. A replaced bank
+pod keeps its role, so its old and new pods form one series. These are the
+cluster's measurements of whole pods, unlike the per-process samples that bank
+replies carry. Measurement is optional: if metrics-server is missing, training
+runs normally and the files are simply not written. Scheduled CronJob runs are
+not sampled, because the sampler runs with the operator's `demo start`.
+
 ## Storage and privacy
 
 Bank containers mount only their own training directory. The coordinator mounts

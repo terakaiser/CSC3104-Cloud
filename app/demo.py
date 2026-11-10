@@ -14,7 +14,9 @@ import psutil
 import yaml
 
 from app.bundle import stage_bundle
-from app.data import replace_file
+from app.data import replace_file, write_json
+from app.resources import Sampler
+from app.resources import summarize as summarize_resources
 
 ROOT = Path(".demo")
 CLUSTER = "bank-fl-demo"
@@ -202,6 +204,18 @@ def setup(synthetic):
     kubectl("rollout", "restart", "deployment")
     for name in WORKLOADS:
         kubectl("rollout", "status", f"deployment/{name}", "--timeout=180s")
+    # metrics-server feeds per-pod CPU/memory to the dashboard and resources.csv. Training
+    # does not depend on it, so a failed install (e.g. its image cannot be pulled) only warns.
+    cluster = ("kubectl", "--context", f"kind-{CLUSTER}")
+    try:
+        command(*cluster, "apply", "-f", "k8s/metrics-server.yaml")
+        command(
+            *cluster,
+            *("-n", "kube-system", "rollout", "status", "deployment/metrics-server"),
+            "--timeout=180s",
+        )
+    except subprocess.CalledProcessError:
+        print("Warning: metrics-server is not ready; pod CPU/memory will not be recorded.")
     print("Ready. Run: uv run bank-fl demo start", flush=True)
 
 
@@ -234,6 +248,22 @@ def collect():
                 else f"Kill {number}: {recovery['bank']} was not seen contributing again "
                 "before training ended or its next kill."
             )
+    samples = Path(state["output"]) / "resources.csv"
+    usage = summarize_resources(samples) if samples.exists() else {}
+    if usage:
+        from experiments.plot import plot_resources
+
+        shutil.copy(samples, directory / "resources.csv")
+        write_json(directory / "resources.json", usage)
+        plot_resources(directory, [json.loads(path.read_text()) for path in finished])
+        for role, use in usage.items():
+            print(
+                f"{role}: CPU mean {use['cpu_millicores_mean']:.0f}m, "
+                f"peak {use['cpu_millicores_peak']:.0f}m; "
+                f"memory peak {use['memory_mib_peak']:.0f} MiB"
+            )
+    else:
+        print("Pod CPU/memory were not recorded (is metrics-server running? Rerun demo setup).")
     summary = json.loads((directory / "summary.json").read_text())
     print(f"Result: {summary['status']} - {summary['committed_rounds']} committed rounds.")
     print(f"Results and charts: {directory}")
@@ -326,7 +356,9 @@ def start(rounds, deadline, mu=0.0):
                 encoding="utf-8",
                 errors="replace",
             )
-            with (ROOT / "session.log").open("w", encoding="utf-8") as session:
+            # Record each pod's CPU/memory for the whole run; collect() files it with the run.
+            sampler = Sampler(lambda *args: kubectl(*args, capture=True), output / "resources.csv")
+            with sampler, (ROOT / "session.log").open("w", encoding="utf-8") as session:
                 for line in submission.stdout:
                     print(line, end="", flush=True)
                     session.write(line)

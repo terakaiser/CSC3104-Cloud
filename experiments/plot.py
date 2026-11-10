@@ -129,6 +129,11 @@ def plot_runs(directories: list[Path], output: Path):
     means = grouped[values].mean()
     deviations = grouped[values].std().fillna(0)
     labels = [f"{key[1]}\n{key[2]}\nN={key[3]} ({key[0]})" for key in means.index]
+    if len(means) < 2:
+        # One configuration has nothing to compare against: each chart would be a single
+        # full-width bar. The same numbers are in summary.json and aggregate.csv.
+        (output / "systems.png").unlink(missing_ok=True)
+        return output / "comparison.png"
     systems, charts = plt.subplots(2, 2, figsize=(12, 9), constrained_layout=True)
     for chart, (column, title) in zip(
         charts.flat,
@@ -158,3 +163,36 @@ def plot_runs(directories: list[Path], output: Path):
     systems.savefig(output / "systems.png", dpi=180)
     plt.close(systems)
     return output / "comparison.png"
+
+
+def plot_resources(directory: Path, faults=()):
+    """Per-pod CPU and memory over a run, from the Kubernetes metrics in resources.csv."""
+    samples = pd.read_csv(directory / "resources.csv")
+    started = (samples["unix_time"] - samples["elapsed_seconds"]).iloc[0]
+    fig, axes = plt.subplots(2, 1, figsize=(10, 7), sharex=True, constrained_layout=True)
+    for role, rows in samples.groupby("role"):
+        # A killed bank's old and replacement pods share one role, so they form one line.
+        rows = rows.sort_values("elapsed_seconds")
+        axes[0].plot(rows["elapsed_seconds"], rows["cpu_millicores"], marker=".", label=role)
+        axes[1].plot(rows["elapsed_seconds"], rows["memory_mib"], marker=".", label=role)
+    for fault in faults:
+        for ax in axes:
+            ax.axvline(fault["unix_time"] - started, color="red", linestyle="--", alpha=0.6)
+        axes[0].annotate(
+            f"{fault['bank']} killed",
+            (fault["unix_time"] - started, axes[0].get_ylim()[1]),
+            fontsize=7,
+            color="red",
+            rotation=90,
+            va="top",
+            ha="right",
+        )
+    axes[0].set(ylabel="CPU (millicores)", title="Pod resource use (Kubernetes metrics-server)")
+    axes[1].set(xlabel="Seconds since training was submitted", ylabel="Memory (MiB)")
+    for ax in axes:
+        ax.grid(alpha=0.2)
+    axes[0].legend(fontsize=8, loc="center right")
+    (directory / "figures").mkdir(exist_ok=True)
+    fig.savefig(directory / "figures" / "resources.png", dpi=180)
+    plt.close(fig)
+    return directory / "figures" / "resources.png"

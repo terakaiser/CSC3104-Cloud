@@ -19,6 +19,7 @@ import psutil
 
 from app import demo
 from app.data import replace_file
+from app.resources import pod_usage
 
 RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 ANSI_ESCAPE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|[@-_])")
@@ -132,7 +133,7 @@ td,th{padding:10px 10px;border-bottom:1px solid var(--border);vertical-align:top
 <article class="card"><div class="label">Current run</div><div class="value" id="runStatus">—</div><div class="subtle" id="runNote">No training run loaded</div></article>
 </section>
 <section class="grid cols">
-<article class="card"><h2>Pods <span class="pill" id="podBadge">—</span></h2><div class="scroll"><table><thead><tr><th>Pod</th><th>Role</th><th>Phase / readiness</th><th>Restarts</th><th>Node</th><th>Conditions / issue</th></tr></thead><tbody id="pods"></tbody></table></div></article>
+<article class="card"><h2>Pods <span class="pill" id="podBadge">—</span></h2><div class="scroll"><table><thead><tr><th>Pod</th><th>Role</th><th>Phase / readiness</th><th>Restarts</th><th title="1000m = one CPU core; limit 1000m">CPU</th><th title="Limit 1024 MiB">Memory</th><th>Conditions / issue</th></tr></thead><tbody id="pods"></tbody></table></div></article>
 <article class="card"><h2>Alerts &amp; Observations <span class="pill" id="alertCount">0</span></h2><div class="alerts" id="alerts"><div class="blank">No alerts loaded</div></div></article>
 <article class="card"><h2>Deployments</h2><div class="scroll"><table><thead><tr><th>Name</th><th>Ready</th><th>Available</th><th>Image</th></tr></thead><tbody id="deployments"></tbody></table></div></article>
 <article class="card"><h2>Kubernetes Events <span class="pill">latest 10 · times in SGT</span></h2><div class="scroll"><table><thead><tr><th>Time (SGT)</th><th>Type / reason</th><th>Object</th><th>Message</th></tr></thead><tbody id="kubeEvents"></tbody></table></div></article>
@@ -173,7 +174,7 @@ const metrics=[["Committed rounds",s.committed_rounds],["Attempts",s.attempts],[
 el("rounds").innerHTML=rounds.slice().reverse().map(r=>row([r.attempt,r.version,r.status,`${fmt(r.seconds,1)} s`,r.accepted,r.samples])).join("")||'<tr><td colspan="6" class="blank">Round records will appear when training starts.</td></tr>';
 const curve=ev.curve||[];const bank=ev.per_bank||{};el("bankMetrics").innerHTML=Object.entries(bank).map(([name,m])=>row([name,fmt(m.precision,3),fmt(m.recall,3),fmt(m.f1,3),fmt(m.pr_auc_average_precision,3),fmt(m.roc_auc,3),fmt(m.false_positive_rate,4)])).join("")||'<tr><td colspan="7" class="blank">Evaluation appears after the run is exported and evaluated.</td></tr>';el("evaluationNote").textContent=ev.synthetic_data?"Synthetic dataset: software-check metrics only, not fraud-detection evidence.":ev.threshold_rule||"";
 if(activeTab==="monitor")chart(el("roundChart"),[{points:rounds.map(r=>[Number(r.attempt),Number(r.seconds)])}],"Attempt duration (seconds)","seconds");if(activeTab==="results")chart(el("qualityChart"),[{points:curve.map(x=>[Number(x.version),Number(x.pr_auc_average_precision)])}],"Test average precision by model version","AP")}
-function render(d){window.lastData=d;el("updated").textContent="";el("cluster").textContent=d.kubernetes?.available?"Connected":d.prepared?"Unavailable":"Not set up";el("clusterChip").className="status "+(d.kubernetes?.available?"ok":d.prepared?"bad":"warn");el("clusterChipText").textContent=d.kubernetes?.available?"Cluster connected":d.prepared?"Cluster unavailable":"Setup required";el("clusterNote").textContent=el("clusterNote").title=d.kubernetes?.error?"Start Docker Desktop, then wait for the cluster to reconnect. "+d.kubernetes.error:(d.prepared?"Context kind-bank-fl-demo / namespace bank-fl":"Run bank-fl demo setup first");const pods=d.kubernetes?.pods||[];const ready=pods.filter(p=>p.ready).length;el("podCount").textContent=pods.length?`${ready} / ${pods.length}`:"—";el("podBadge").textContent=`${ready} ready`;el("pods").innerHTML=pods.length?pods.map(p=>row([p.name,p.role,p.phase+(p.ready?" · Ready":" · Not Ready"),p.restarts,p.node,p.issues.join("; ")])).join(""):'<tr><td colspan="6" class="blank">No pods returned</td></tr>';
+function render(d){window.lastData=d;el("updated").textContent="";el("cluster").textContent=d.kubernetes?.available?"Connected":d.prepared?"Unavailable":"Not set up";el("clusterChip").className="status "+(d.kubernetes?.available?"ok":d.prepared?"bad":"warn");el("clusterChipText").textContent=d.kubernetes?.available?"Cluster connected":d.prepared?"Cluster unavailable":"Setup required";el("clusterNote").textContent=el("clusterNote").title=d.kubernetes?.error?"Start Docker Desktop, then wait for the cluster to reconnect. "+d.kubernetes.error:(d.prepared?"Context kind-bank-fl-demo / namespace bank-fl":"Run bank-fl demo setup first");const pods=d.kubernetes?.pods||[];const ready=pods.filter(p=>p.ready).length;el("podCount").textContent=pods.length?`${ready} / ${pods.length}`:"—";el("podBadge").textContent=`${ready} ready`;el("pods").innerHTML=pods.length?pods.map(p=>row([p.name,p.role,p.phase+(p.ready?" · Ready":" · Not Ready"),p.restarts,p.cpu_millicores==null?null:fmt(p.cpu_millicores,0)+"m",p.memory_mib==null?null:fmt(p.memory_mib,0)+" MiB",p.issues.join("; ")])).join(""):'<tr><td colspan="7" class="blank">No pods returned</td></tr>';
 el("deployments").innerHTML=(d.kubernetes?.deployments||[]).map(x=>row([x.name,`${x.ready}/${x.desired}`,x.available,x.images.join(", ")])).join("")||'<tr><td colspan="4" class="blank">No deployments found</td></tr>';
 el("services").innerHTML=(d.kubernetes?.services||[]).map(s=>`<div class="service"><b>${esc(s.name)}</b> <span class="muted">${esc(s.cluster_ip)} · ${esc(s.ports.join(", "))}</span></div>`).join("")||'<div class="blank">No services found</div>';
 el("kubeEvents").innerHTML=(d.kubernetes?.events||[]).slice(0,10).map(e=>row([e.time,`${e.type} / ${e.reason}`,e.object,e.message])).join("")||'<tr><td colspan="4" class="blank">No recent events</td></tr>';
@@ -436,6 +437,15 @@ def _kubernetes():
                 }
             )
     events.sort(key=lambda event: event["time"], reverse=True)
+    # Live CPU/memory from metrics-server; optional, and a brand-new pod has none yet.
+    try:
+        usage = {row["pod"]: row for row in pod_usage(_kubectl)}
+    except (OSError, RuntimeError, subprocess.TimeoutExpired, ValueError, KeyError, TypeError):
+        usage = {}
+    for pod in pods:
+        measured = usage.get(pod["name"], {})
+        pod["cpu_millicores"] = measured.get("cpu_millicores")
+        pod["memory_mib"] = measured.get("memory_mib")
     logs, logs_error = "", None
     try:
         logs = ANSI_ESCAPE.sub(

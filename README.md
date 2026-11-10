@@ -86,10 +86,12 @@ Each demo run creates a folder under `results\demo`:
 | File | What it shows |
 |------|---------------|
 | `figures\comparison.png` | Round times and fraud-detection quality over time |
-| `figures\systems.png` | Training time, successful rounds, data transferred, memory |
+| `figures\systems.png` | Bar charts comparing configurations (only drawn when several runs are plotted together, e.g. the comparison study) |
 | `summary.json` | Rounds completed, how often each bank took part, rejected updates |
 | `evaluation.json` | Precision, recall, F1, PR-AUC, ROC-AUC, false-positive rate |
 | `recovery.json` | Seconds until the failed bank contributed again (demo only) |
+| `figures\resources.png` | Each pod's CPU and memory during the run, with kills marked |
+| `resources.json`, `resources.csv` | Mean and peak CPU/memory per pod, from Kubernetes metrics-server |
 | `rounds.csv`, `events.jsonl` | Raw per-round logs |
 | `model-000.npz`, `model-001.npz`, ... | The saved global model after each round |
 
