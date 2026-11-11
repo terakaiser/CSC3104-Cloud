@@ -6,16 +6,21 @@ so it can rejoin.
 
 Built with Python, PyTorch, Flower (federated learning), Docker and Kubernetes.
 
+The whole path below (install, setup, one training run with a failure) was
+tested from a fresh clone on Windows 11 on 11 Nov 2026. The times given are from
+that test; a slower laptop or internet connection will take longer.
+
 ## 1. Install the tools (once)
-You need four tools. Install them with one command, then restart machine.
+You need Git and four tools. Install them with one command, then restart your
+computer.
 
 **Windows** (PowerShell):
 ```powershell
-"astral-sh.uv", "Docker.DockerDesktop", "Kubernetes.kubectl", "Kubernetes.kind" | ForEach-Object { winget install --exact --id $_ }
+"Git.Git", "astral-sh.uv", "Docker.DockerDesktop", "Kubernetes.kubectl", "Kubernetes.kind" | ForEach-Object { winget install --exact --id $_ }
 ```
 **Mac** (Terminal, needs [Homebrew](https://brew.sh)):
 ```bash
-brew install uv kubernetes-cli kind && brew install --cask docker-desktop
+brew install git uv kubernetes-cli kind && brew install --cask docker-desktop
 ```
 | Tool | What it is for |
 |------|----------------|
@@ -25,18 +30,34 @@ brew install uv kubernetes-cli kind && brew install --cask docker-desktop
 | kind | Runs a small Kubernetes cluster inside Docker on your laptop |
 
 ## 2. Set up the project (once)
-From the repository folder:
+Get the code and go into its folder. Run every later command from this folder:
+```powershell
+git clone https://github.com/terakaiser/CSC3104-Cloud.git
+cd CSC3104-Cloud
+```
+Then install Python and the packages (about 1 minute; it downloads about 700 MB):
 ```powershell
 uv sync --frozen --extra dev --python 3.12
 ```
 This creates a `.venv` folder with Python 3.12 and the exact package versions
-from `uv.lock`.
+from `uv.lock`. The last lines list the installed packages, ending near
+`torch==2.8.0+cpu`.
+
+Optional check that the code works on your machine (about 30 seconds, should end
+with `119 passed`):
+```powershell
+uv run pytest -q
+```
 
 ## 3. Run it
-Start Docker Desktop first. Then run setup:
+Start Docker Desktop first and wait until it says the engine is running. Then
+run setup (about 3 minutes; the first time can take several minutes longer
+because Docker downloads the base images):
 ```powershell
 uv run bank-fl demo setup
 ```
+It is finished when the last line starts with `Ready with 3 banks`.
+
 Setup downloads the public Kaggle credit-card fraud dataset into `data\raw`,
 splits it into three banks under `data\ulb`, builds the Docker image and creates
 the Kubernetes cluster. If the download is blocked, download `creditcard.csv`
@@ -48,9 +69,12 @@ Then open the dashboard. This is the only terminal you need:
 uv run bank-fl demo dashboard
 ```
 It opens <http://127.0.0.1:8765> in your browser. In **Live Monitor**:
-1. Click **Start Training**.
+1. Click **Start Training**. The default run is 30 rounds and takes about
+   7 minutes (about 13 seconds per round).
 2. After a few rounds commit, pick a bank and a failure type in **Simulate
-   Self-Healing**, click **Inject Failure**, then click again to confirm.
+   Self-Healing**, click **Inject Failure**, then click the same button again
+   within 4 seconds to confirm (it changes to **Confirm: ...**; if you wait
+   longer it resets and nothing happens).
    *Delete pod* kills the bank's pod (Kubernetes recreates it in seconds);
    *Offline for 20 s* is a temporary outage. You can inject more failures in the
    same run, one at a time.
@@ -84,10 +108,12 @@ with their skew in the dashboard.
 uv run bank-fl demo setup --skew 0
 ```
 
-After training, let the model check a payment it has never seen:
+After training, let the model check a payment it has never seen. `<run-folder>`
+is the inner folder of a run, for example
+`results\demo\20261111-162639\20261111T082649-47185598` (see section 4):
 ```powershell
-uv run bank-fl predict <results-folder> --fraud    # a real fraud payment
-uv run bank-fl predict <results-folder> --normal   # a normal payment
+uv run bank-fl predict <run-folder> --fraud    # a real fraud payment
+uv run bank-fl predict <run-folder> --normal   # a normal payment
 ```
 
 The cluster also retrains on its own every Sunday at 02:00 (Singapore time)
@@ -96,10 +122,14 @@ through a Kubernetes CronJob. To start one scheduled run now and follow it:
 kubectl --kubeconfig .demo/kubeconfig --context kind-bank-fl-demo -n bank-fl create job --from=cronjob/scheduled-training retrain-now
 kubectl --kubeconfig .demo/kubeconfig --context kind-bank-fl-demo -n bank-fl logs -f job/retrain-now
 ```
-Don't start a dashboard or `demo start` run while a scheduled run is training.
+A scheduled run is 20 rounds and takes about 5 minutes. Don't start a dashboard
+or `demo start` run while a scheduled run is training.
 
 ## 4. Results
-Each demo run creates a folder under `results\demo`:
+Each demo run creates a folder under `results\demo`, named after the start time,
+for example `results\demo\20261111-162639`. Inside it is one folder named after
+the run ID (for example `20261111T082649-47185598`) that holds the files below.
+The dashboard's **Results** tab shows the same numbers.
 
 | File | What it shows |
 |------|---------------|
@@ -114,7 +144,7 @@ Each demo run creates a folder under `results\demo`:
 | `model-000.npz`, `model-001.npz`, ... | The saved global model after each round |
 
 ## 5. After you change the code
-- **Tests:** nothing to do. `uv run` always uses your latest code.
+- **Tests:** run `uv run pytest -q`. `uv run` always uses your latest code.
 - **Kubernetes demo:** run `uv run bank-fl demo setup` again. It rebuilds
   the image (a few seconds when only code changed) and restarts the pods.
   Do not run it while a demo is training.

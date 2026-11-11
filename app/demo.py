@@ -293,7 +293,8 @@ def setup(synthetic, count=3, skew=1.0):
         )
     except subprocess.CalledProcessError:
         print("Warning: metrics-server is not ready; pod CPU/memory will not be recorded.")
-    print(f"Ready with {count} banks (skew {skew:g}). Run: uv run bank-fl demo start", flush=True)
+    ready = f"Ready with {count} banks (skew {skew:g})."
+    print(f"{ready} Run: uv run bank-fl demo dashboard", flush=True)
 
 
 def collect():

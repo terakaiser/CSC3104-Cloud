@@ -15,6 +15,13 @@ for runs before 10 Nov 17:41 were removed, so for those runs the fault, recovery
 and resource numbers below are the surviving record. Do not delete `results\demo`
 or the cluster again before the report is written; copy both somewhere safe.
 
+**Update 11 Nov:** the cluster was deleted and recreated for the clean-clone
+test (Section 3.11). Before that, all 26 runs on its results volume were copied
+to the laptop: 18 in `results\cluster-backup-20261110` and the 8 runs from the
+evening of 10 Nov in `results\cluster-backup-20261111` (file counts checked
+against the cluster). `/results/...` paths in this file now refer to those two
+folders. Neither folder is in git.
+
 ---
 
 ## 1. Positioning (Introduction / Related Work)
@@ -244,7 +251,7 @@ or the cluster again before the report is written; copy both somewhere safe.
   A dedicated cluster and kubeconfig mean the demo never touches the user's own
   Kubernetes setup.
 - **Evidence:** clean-clone setup worked on a second machine (Faizal's desktop,
-  5 Nov); the full instructions test is still to do (Section 6).
+  5 Nov); full timed clean-clone test on 11 Nov (Section 3.11).
 
 ## 3. Features added after the progress presentation, and why
 
@@ -465,6 +472,7 @@ or the cluster again before the report is written; copy both somewhere safe.
 | Training could not start after a CronJob run | Finished job pods are never "Ready" and the start-up wait covered all pods | Wait only for the 4 workload pods; dashboard hides finished job pods |
 | Killing the same bank twice could hang | A pod still terminating was mistaken for the replacement | Ignore pods with a deletion timestamp |
 | "Failure simulation failed" on Windows | Windows cannot replace a file another process (the dashboard) has open | Retry the atomic replace for up to 2 s; show the real error |
+| Dashboard Training card said "0 committed" for a whole run (found in the 11 Nov clean-clone test) | The card read the run summary, which is only written when the run ends | Count the committed events while the run is active (checked live: "2 committed · attempt 3") |
 
 ### 3.10 Operations and tooling
 - **Dashboard** (`uv run bank-fl demo dashboard`, Charmain and Yee, 26–27 Oct):
@@ -510,6 +518,54 @@ or the cluster again before the report is written; copy both somewhere safe.
   formatting enforced. About 4,100 lines of application code and 1,570 lines of
   tests. *Why:* the brief requires tested code; the tests are also how each
   resilience rule is shown to hold without depending on timing luck.
+
+### 3.11 Clean-clone test and testing instructions (11 Nov)
+- **What:** the repository was cloned from GitHub into a new empty folder
+  (`Desktop\G18-clean-test`, commit `0831c3a`), the existing kind cluster was
+  deleted, and only the README was followed: install packages, `demo setup`,
+  dashboard, Start Training, inject a failure, read the results, plus the
+  tests, `demo status`, `predict` and the manual CronJob run. The result is
+  written up for the marker as `docs/GROUP18_INSTRUCTIONS.pdf` (4 pages:
+  requirements, 11 steps with expected output and time, optional tests, common
+  problems, what each step demonstrates).
+- **Why:** the brief requires testing instructions and says "it worked at home"
+  is not accepted. A fresh folder and a fresh cluster is the closest we can get
+  to the marker's machine.
+- **Evidence (Windows 11, 28 CPU threads, 32 GB; Docker engine 29.8.2, kind
+  0.33.0, kubectl 1.36.1, uv 0.13.5). Every step worked first time.**
+
+  | Step | Time | Result |
+  |---|---|---|
+  | `git clone` | 2 s | — |
+  | `uv sync --frozen --extra dev --python 3.12` (empty package cache) | 70 s | 61 packages; torch alone is a 591 MiB download |
+  | `uv run pytest -q` | 30 s | 119 passed |
+  | `uv run bank-fl demo setup` (new cluster) | 152 s | data ready at 19 s, image built at 23 s, cluster up at 57 s, image loaded at 92 s, pods rolled out at 126 s, metrics-server at 152 s |
+  | Same, from the real repo afterwards | 134 s | — |
+  | Dashboard run, 30 rounds, one kill of bank-3 | 407.0 s training | 30/30 rounds; participation 30 / 30 / 28; 1 rejected reply (`client_error`, the killed pod's request) |
+  | Kill → replacement pod Ready | 3.8 s | — |
+  | Kill → bank contributing again | 28.2 s | — |
+  | Final model on the test set | — | recall 0.789, precision 0.836, F1 0.812, AP 0.717 (56 of 71 frauds, 11 false alarms) |
+  | Manual CronJob run (`retrain-now`) | 279 s | 20 rounds, job Complete 1/1 |
+  | `predict --fraud` / `--normal` | seconds | both correct (2 spot checks, not a statistic) |
+
+  Run folder (copied into the real repo): `results/demo/20261111-162639`.
+- **Limits of the test:** the tools were already installed, so Step 1 (winget)
+  was not timed, only checked that the package IDs exist. Docker's build cache
+  and the kind node image were already on the laptop, so the 152 s does not
+  include a first image build (61 s measured on 25 Oct) or the image
+  downloads. Windows only; the Mac commands are untested by us.
+- **Problems found and fixed:**
+
+  | Problem | Fix |
+  |---|---|
+  | **The GitHub repository is private**: an anonymous `git ls-remote` is refused, so the marker cannot clone it | **Open: the owner (terakaiser) must make it public or give the lecturer access before submission** |
+  | README never said how to get the code, and Git was not in the install line | Added `git clone` + `cd`, and Git to both install commands |
+  | "Click again to confirm" did not say the confirm click must come within 4 s; a slow second click silently does nothing | README and instructions now say so |
+  | No time estimates anywhere | Added measured times for sync, setup, a run and a scheduled run |
+  | `predict <results-folder>` fails with a confusing "run evaluate first" if given the outer start-time folder | README now explains the inner run-ID folder, with an example |
+  | README said "Tests: nothing to do" and never gave the test command | Added `uv run pytest -q` and the expected `119 passed` |
+  | Setup's last line said to run `demo start`, while the README says to open the dashboard | Message now says `demo dashboard` |
+  | Dashboard showed "0 committed" during a run | Fixed (Section 3.9) |
 
 ## 4. Results to report (Evaluation)
 
@@ -562,8 +618,17 @@ The table below lists single cluster runs. The repeated comparison is in Section
   | Stale | Resilient | 20 | 0 | 208.8 ± 17.7 | 19 | 0.779 ± 0.008 | 0.806 ± 0.024 | 0.792 ± 0.012 | 0.701 ± 0.010 |
 
   Figures: `results/study/figures/comparison.png` and `systems.png` (the axis
-  labels are crowded with 12 configurations; redraw a smaller chart for the
-  article). Raw list of runs: `results/study/progress.jsonl`.
+  labels are crowded with 12 configurations). **Article figure:**
+  `results/study/figures/article-time-rounds.png` (and `.pdf`), drawn on 11 Nov
+  by `python -m experiments.study_chart results/study`. Two panels, training
+  time and rounds completed, grouped by scenario with one bar per mode
+  (synchronous, timeout, resilient). It reads each run's `summary.json` through
+  `progress.jsonl`, so no number is typed by hand; the bars match the table
+  above (219 / 210 / 221, 256 / 286 / 205, 240 / 209, 90 "gave up" / 185).
+  FedProx and the centralised baseline are left out to keep it readable, and
+  the two combinations the study did not run (timeout with a stale update or a
+  missing bank) are marked "not run". Raw list of runs:
+  `results/study/progress.jsonl`.
 - **What the numbers say (answer to RQ2):**
   - **A missing bank stops synchronous training completely.** In all 3 seeds it
     never started (0 rounds, gave up after the 90 s startup limit). Resilient
@@ -628,7 +693,11 @@ The table below lists single cluster runs. The repeated comparison is in Section
 
 | Item | Purpose |
 |---|---|
-| Full clean-clone test + `GROUP18_INSTRUCTIONS.pdf` | Required submission; proves it works beyond our laptops |
+| Make the GitHub repository public (or give the lecturer access) | The marker cannot clone a private repository (Section 3.11) |
+| Progress deck slide 11 still mentions an AWS EKS run | The lecturer said local hosting is fine; do not repeat the EKS claim in the video |
+| Article (about 3,000 words, max 6 pages, IEEE/ACM) and 10–15 minute video | Required submissions, due 23:59 Sun 15 Nov |
+
+Done: clean-clone test and `docs/GROUP18_INSTRUCTIONS.pdf` (11 Nov, Section 3.11).
 
 ## 7. Who built what (from the git history; map usernames to real names)
 
