@@ -567,6 +567,40 @@ folders. Neither folder is in git.
   | Setup's last line said to run `demo start`, while the README says to open the dashboard | Message now says `demo dashboard` |
   | Dashboard showed "0 committed" during a run | Fixed (Section 3.9) |
 
+### 3.12 Final article draft (12 Nov)
+- **What:** first full draft of the article, written into the group's Google Doc
+  ("Groupd_18 Final Report") in IEEE conference layout: Letter page, two
+  columns, Times New Roman 10 pt, abstract of 193 words, about 3,400 words of
+  text, 16 references, two tables and three figures. Sections: Introduction,
+  System Design, Implementation, Evaluation, Related Work, Conclusion.
+- **Figures** (in `docs/figures/`, drawn from the results folders, no typed
+  numbers): `fig1-architecture.png` (system diagram), `fig2-time-rounds.png`
+  (the Section 4.1 study, one-column version of the article chart) and
+  `fig3-skew-ap.png` (average precision per round for skew 0, 1, 2, 4, from the
+  four runs in Section 3.8, with the centralised result as a reference line).
+- **Why these choices:** the brief gives most weight to the originality argument
+  and the quantitative evaluation, so the article states the contribution as
+  integration plus measurement, compares against six groups of related work, and
+  reports every claim with a number and its spread.
+- **Numbers derived for the article (from runs already recorded above):**
+  pod Ready after a deletion, 9 kills on the cluster (six on 6 Nov, two on
+  10 Nov, one on 11 Nov): 3.0–3.8 s, mean 3.4 s. Bank contributing again, 7
+  observed (two censored): 28.2–42.2 s, mean 35.2 s.
+- **To check before submission:**
+  - The 16 references were written from memory. Check authors, venue, year and
+    pages of each one against Google Scholar. The proposal's fourth reference
+    (loss-aware weighted aggregation, 2026) is not cited because its details
+    are unknown.
+  - Section II-C says Flower's built-in strategies drop late results without
+    recording a reason, and Section V says Micro-FL's evaluation assumes working
+    clients (as in our proposal). The team should confirm both against the
+    sources.
+  - The author line and affiliation are taken from the proposal; adjust to what
+    the lecturer expects.
+  - The three figure images must be inserted by hand at the yellow placeholder
+    lines (the Docs connector cannot upload local images). Final length must
+    stay within 6 pages after that.
+
 ## 4. Results to report (Evaluation)
 
 The table below lists single cluster runs. The repeated comparison is in Section 4.1.
