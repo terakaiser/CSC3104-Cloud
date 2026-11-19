@@ -7,8 +7,8 @@ so it can rejoin.
 Built with Python, PyTorch, Flower (federated learning), Docker and Kubernetes.
 
 The whole path below (install, setup, one training run with a failure) was
-tested from a fresh clone on Windows 11 on 11 Nov 2026. The times given are from
-that test; a slower laptop or internet connection will take longer.
+tested from a fresh clone on Windows 11. The times given are from
+that test and a slower laptop or internet connection will take longer.
 
 ## 1. Install the tools (once)
 You need Git and four tools. Install them with one command, then restart your
@@ -18,7 +18,7 @@ computer.
 ```powershell
 "Git.Git", "astral-sh.uv", "Docker.DockerDesktop", "Kubernetes.kubectl", "Kubernetes.kind" | ForEach-Object { winget install --exact --id $_ }
 ```
-**Mac** (Terminal, needs [Homebrew](https://brew.sh)):
+**Mac** (Terminal, needs homebrew):
 ```bash
 brew install git uv kubernetes-cli kind && brew install --cask docker-desktop
 ```
@@ -35,7 +35,7 @@ Get the code and go into its folder. Run every later command from this folder:
 git clone https://github.com/terakaiser/CSC3104-Cloud.git
 cd CSC3104-Cloud
 ```
-Then install Python and the packages (about 1 minute; it downloads about 700 MB):
+Then install Python and the packages:
 ```powershell
 uv sync --frozen --extra dev --python 3.12
 ```
