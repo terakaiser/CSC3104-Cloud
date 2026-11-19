@@ -6,8 +6,7 @@ so it can rejoin.
 
 Built with Python, PyTorch, Flower (federated learning), Docker and Kubernetes.
 
-The whole path below (install, setup, one training run with a failure) was
-tested from a fresh clone on Windows 11. The times given are from
+The whole path below (install, setup, one training run with a failure). The times given are from
 that test and a slower laptop or internet connection will take longer.
 
 ## 1. Install the tools (once)
@@ -70,11 +69,9 @@ uv run bank-fl demo dashboard
 ```
 It opens <http://127.0.0.1:8765> in your browser. In **Live Monitor**:
 1. Click **Start Training**. The default run is 30 rounds and takes about
-   7 minutes (about 13 seconds per round).
+   7 minutes.
 2. After a few rounds commit, pick a bank and a failure type in **Simulate
-   Self-Healing**, click **Inject Failure**, then click the same button again
-   within 4 seconds to confirm (it changes to **Confirm: ...**; if you wait
-   longer it resets and nothing happens).
+   Self-Healing**, click **Inject Failure**, then click the same button again to confirm
    *Delete pod* kills the bank's pod (Kubernetes recreates it in seconds);
    *Offline for 20 s* is a temporary outage. You can inject more failures in the
    same run, one at a time.
